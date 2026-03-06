@@ -183,6 +183,8 @@ GitHub Repository Secrets에 아래 항목을 설정하세요.
 - `montkim9/fmkorea-hotdeal-monitor:latest`
 - `montkim9/fmkorea-hotdeal-monitor:<commit sha 6자리>`
 
+빌드 아키텍처는 `linux/amd64`(x86_64) 단일로 설정되어 있습니다.
+
 ## 컨테이너 로그에서 최근 1주일 + 키워드 확인 예시
 
 ```
