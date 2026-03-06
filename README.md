@@ -162,26 +162,26 @@ bash scripts/apply-k8s-from-config.sh --dry-run
 운영에서 `CONFIG` 기준으로 `USE_FILE_STATE=true`를 보장하면 됩니다.
 `deployment-with-file-state.yaml`은 Redis 대신 파일 상태 저장을 쓰도록 `USE_REDIS_STATE=false`를 고정합니다.
 
-`deployment.yaml`의 이미지 태그(`ghcr.io/<owner>/<repo>:latest`)는 실제 레포지토리 경로에 맞게 수정하세요.
+`deployment.yaml`의 이미지 태그(`docker.io/<docker_username>/fmkorea-hotdeal-monitor:latest`)는
+실제 레포지토리 경로에 맞게 수정하세요.
 
 ## GitHub Actions
 
-`.github/workflows/ci.yml`는 `main` 브랜치 push 시 Docker build 후 GHCR로 push 합니다.
+`.github/workflows/ci.yml`는 `main` 브랜치 push 시 Docker build 후 Docker Hub로 push 합니다.
 `workflow_dispatch`로 수동 실행할 때는 `main` 브랜치에서만 push 하고,
 다른 브랜치에서는 build만 수행합니다.
 
-현재 워크플로우는 Docker Hub가 아니라 GHCR(`ghcr.io`)로 push 하며,
-인증은 `docker/login-action` + GitHub 기본 `GITHUB_TOKEN`으로 처리합니다.
+워크플로우는 빌드 시작 전에 Docker Hub 로그인 검증을 먼저 수행합니다.
 
-즉 별도 Docker Hub 토큰은 필요하지 않습니다.
+GitHub Repository Secrets에 아래 2개를 설정하세요.
+- `docker_username`
+- `docker_password`
 
-GitHub에서 확인할 설정:
-- Repository `Settings > Actions > General > Workflow permissions`: `Read and write permissions`
-- Organization에서 GHCR 패키지 제한이 있는 경우, 해당 repository의 package write 권한 허용
+참고: 기존 대문자 시크릿(`DOCKER_USERNAME`, `DOCKER_PASSWORD`)도 fallback으로 지원합니다.
 
 푸시 태그
-- `ghcr.io/<owner>/<repo>:latest`
-- `ghcr.io/<owner>/<repo>:<commit sha>`
+- `<docker_username>/fmkorea-hotdeal-monitor:latest`
+- `<docker_username>/fmkorea-hotdeal-monitor:<commit sha 6자리>`
 
 ## 컨테이너 로그에서 최근 1주일 + 키워드 확인 예시
 
