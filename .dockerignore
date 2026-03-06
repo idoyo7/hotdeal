@@ -5,3 +5,9 @@ dist
 README.md
 .env
 .env.example
+config
+logs
+data
+tests
+k8s
+scripts

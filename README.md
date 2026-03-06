@@ -66,6 +66,9 @@ npm run docker:test
 도커 테스트는 이미지를 빌드하고 `.env`를 주입해 `RUN_ONCE=true` + `DRY_RUN=true`로
 한 번 실행해 컨테이너에서 보이는 로그를 바로 확인합니다.
 
+현재 Dockerfile은 경량화를 위해 Playwright 번들 브라우저를 이미지에 내장하지 않고,
+컨테이너의 시스템 Chromium(`PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium`)을 사용합니다.
+
 참고: IP/지역에 따라 fmkorea가 430/429 차단 페이지를 반환하면 즉시 추적이 중단됩니다.
 이때는 `FMKOREA_BOARD_URLS`에 다른 접근 가능한 URL을 넣어 우회 후보를 추가하세요.
 우선적으로는 `https://m.fmkorea.com/hotdeal` 또는 해당 국가 IP에서 동작하는 보조 도메인을 추가해 보세요.

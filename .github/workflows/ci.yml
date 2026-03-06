@@ -32,6 +32,10 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Extract short SHA
+        id: vars
+        run: echo "SHORT_SHA=${GITHUB_SHA::6}" >> $GITHUB_ENV
+
       - name: Normalize image name
         run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
@@ -42,11 +46,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify Docker login
+        run: |
+          echo "Verifying Docker login to GHCR..."
+          docker info | grep -E "Registry|Username" || true
+          echo "Testing access with a simple command..."
+          docker buildx version
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
+          context: .
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
             ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
           platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify image push
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "Verifying pushed image..."
+          docker manifest inspect ${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
+          echo "Image successfully pushed with tag: ${{ env.SHORT_SHA }}"
