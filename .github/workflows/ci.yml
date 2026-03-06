@@ -36,19 +36,15 @@ jobs:
         id: vars
         run: echo "SHORT_SHA=${GITHUB_SHA::6}" >> $GITHUB_ENV
 
-      - name: Normalize image name
-        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-
-      - name: Login to GHCR
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Verify Docker login
         run: |
-          echo "Verifying Docker login to GHCR..."
+          echo "Verifying Docker login to Docker Hub..."
           docker info | grep -E "Registry|Username" || true
           echo "Testing access with a simple command..."
           docker buildx version
@@ -59,8 +55,8 @@ jobs:
           context: .
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
+            ${{ secrets.DOCKER_USERNAME }}/fmkorea-hotdeal-monitor:${{ env.SHORT_SHA }}
+            ${{ secrets.DOCKER_USERNAME }}/fmkorea-hotdeal-monitor:latest
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -69,5 +65,5 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           echo "Verifying pushed image..."
-          docker manifest inspect ${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
+          docker manifest inspect ${{ secrets.DOCKER_USERNAME }}/fmkorea-hotdeal-monitor:${{ env.SHORT_SHA }}
           echo "Image successfully pushed with tag: ${{ env.SHORT_SHA }}"
