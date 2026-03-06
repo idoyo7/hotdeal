@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fmkorea-hotdeal-monitor
+  labels:
+    app: fmkorea-hotdeal-monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fmkorea-hotdeal-monitor
+  template:
+    metadata:
+      labels:
+        app: fmkorea-hotdeal-monitor
+    spec:
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
+        - name: state-store
+          persistentVolumeClaim:
+            claimName: fmkorea-hotdeal-monitor-data
+      containers:
+        - name: monitor
+          image: ghcr.io/<owner>/<repo>:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: fmkorea-hotdeal-monitor-config
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          env:
+            - name: USE_FILE_STATE
+              value: "true"
+            - name: USE_REDIS_STATE
+              value: "false"
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: fmkorea-hotdeal-monitor-secret
+                  key: slack-webhook-url
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: fmkorea-hotdeal-monitor-secret
+                  key: telegram-bot-token
+            - name: TELEGRAM_CHAT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: fmkorea-hotdeal-monitor-secret
+                  key: telegram-chat-id
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: state-store
+              mountPath: /app/data

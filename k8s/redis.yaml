@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fmkorea-hotdeal-redis
+  labels:
+    app: fmkorea-hotdeal-redis
+  annotations:
+    hotdeal.evejuni.io/component-version: "7.2.7"
+    hotdeal.evejuni.io/compat-policy: "major-version-locked"
+    hotdeal.evejuni.io/compat-major: "7"
+spec:
+  selector:
+    app: fmkorea-hotdeal-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fmkorea-hotdeal-redis-headless
+  labels:
+    app: fmkorea-hotdeal-redis
+spec:
+  clusterIP: None
+  selector:
+    app: fmkorea-hotdeal-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fmkorea-hotdeal-redis
+  labels:
+    app: fmkorea-hotdeal-redis
+  annotations:
+    hotdeal.evejuni.io/component-version: "7.2.7"
+    hotdeal.evejuni.io/compat-policy: "major-version-locked"
+    hotdeal.evejuni.io/compat-major: "7"
+    hotdeal.evejuni.io/update-strategy: "on-delete"
+spec:
+  serviceName: fmkorea-hotdeal-redis-headless
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: OnDelete
+  selector:
+    matchLabels:
+      app: fmkorea-hotdeal-redis
+  template:
+    metadata:
+      labels:
+        app: fmkorea-hotdeal-redis
+      annotations:
+        hotdeal.evejuni.io/component-version: "7.2.7"
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: redis
+          image: redis:7.2.7-alpine
+          imagePullPolicy: IfNotPresent
+          args:
+            - redis-server
+            - --appendonly
+            - "yes"
+            - --appendfsync
+            - everysec
+            - --save
+            - "60"
+            - "1000"
+            - --dir
+            - /data
+          ports:
+            - containerPort: 6379
+              name: redis
+          readinessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+        labels:
+          app: fmkorea-hotdeal-redis
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi

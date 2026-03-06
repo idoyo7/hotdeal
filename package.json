@@ -1,0 +1,33 @@
+{
+  "name": "fmkorea-hotdeal-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FMKorea hotdeal monitor with Slack and Telegram alerts",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "run:local": "bash scripts/run-local.sh",
+    "run:once:local": "bash scripts/run-keyword-once-local.sh",
+    "run:once:docker": "bash scripts/run-keyword-once-docker.sh",
+    "docker:test": "bash scripts/run-docker.sh",
+    "docker:build": "docker build -t fmkorea-hotdeal-monitor:test .",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.5",
+    "playwright": "^1.58.2",
+    "redis": "^4.7.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}

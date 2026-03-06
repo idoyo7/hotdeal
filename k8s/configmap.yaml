@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fmkorea-hotdeal-monitor-config
+data:
+  FMKOREA_BOARD_URL: "https://m.fmkorea.com/hotdeal"
+  FMKOREA_BOARD_URLS: "https://www.fmkorea.com/hotdeal"
+  CRAWL_MODE: "playwright"
+  REQUEST_INTERVAL_MS: "300000"
+  REQUEST_TIMEOUT_MS: "20000"
+  MAX_ITEMS_PER_POLL: "30"
+  MAX_PAGES_PER_POLL: "3"
+  STATE_FILE_PATH: "/app/data/seen.json"
+  USE_FILE_STATE: "false"
+  USE_REDIS_STATE: "true"
+  REDIS_URL: "redis://fmkorea-hotdeal-redis:6379"
+  REDIS_KEY_PREFIX: "hotdeal:seen:"
+  REDIS_TTL_SECONDS: "0"
+  LOOKBACK_HOURS: "168"
+  STARTUP_LOOKBACK_HOURS: "24"
+  SHOW_RECENT_MATCHES: "true"
+  RUN_ONCE: "false"
+  DRY_RUN: "true"
+  ALERT_KEYWORDS: "삼다수,요기요"

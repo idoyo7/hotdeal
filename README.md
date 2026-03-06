@@ -1,0 +1,252 @@
+# fmkorea-hotdeal-monitor
+
+FMKorea 핫딜 게시판을 Playwright 기반으로 주기적으로 크롤링해서, 설정한 키워드가 제목에 포함될 때
+Slack 또는 Telegram으로 알림을 보내는 Node.js 기반 모니터입니다.
+
+## 주요 기능
+
+- FMKorea 핫딜 게시판 페이지를 일정 간격으로 조회
+- 키워드 매칭(기본 제목 기준)으로 신규 게시글 감지
+- 중복 알림 방지를 위한 게시글 ID 저장
+- Slack Webhook / Telegram Bot API 중복 전송 지원
+- `.env` 및 Kubernetes 환경변수 기반 설정
+- Dockerfile + Kubernetes 배포 템플릿
+- GitHub Actions로 빌드 후 GitHub Container Registry에 푸시
+- 기본은 BP(메모리 상태) 모드, `DRY_RUN`/`USE_FILE_STATE`를 통해 안전한 사전 점검과
+  중복 알림 저장 방식 전환 지원
+
+## 시작 방법
+
+1. 의존성 설치
+
+```bash
+npm install
+```
+
+2. `.env` 작성
+
+```bash
+cp .env.example .env
+```
+
+3. 로컬 실행(권장)
+
+```bash
+./scripts/run-local.sh
+```
+
+스크립트는 다음을 수행합니다.
+
+- `.env`가 없으면 `.env.example`을 복사
+- TypeScript 빌드
+- 컨테이너처럼 동작하는 단발 실행(`RUN_ONCE=true`) 및 DRY_RUN 기본 동작
+- pod 시작 직후 최근 24시간 키워드 매칭 결과 로그 출력
+
+원하면 수동으로 실행도 가능합니다.
+
+```bash
+npm run build
+RUN_ONCE=true DRY_RUN=true npm start
+```
+
+4. 테스트
+
+```bash
+npm test
+```
+
+테스트는 TypeScript 빌드 후 `tests/*.js` 기반의 Node 테스트 스위트를 실행합니다.
+
+## 로컬 Docker 테스트
+
+```bash
+npm run docker:test
+```
+
+도커 테스트는 이미지를 빌드하고 `.env`를 주입해 `RUN_ONCE=true` + `DRY_RUN=true`로
+한 번 실행해 컨테이너에서 보이는 로그를 바로 확인합니다.
+
+참고: IP/지역에 따라 fmkorea가 430/429 차단 페이지를 반환하면 즉시 추적이 중단됩니다.
+이때는 `FMKOREA_BOARD_URLS`에 다른 접근 가능한 URL을 넣어 우회 후보를 추가하세요.
+우선적으로는 `https://m.fmkorea.com/hotdeal` 또는 해당 국가 IP에서 동작하는 보조 도메인을 추가해 보세요.
+실제 실행에서는 기준 URL 실패 시 자동으로 모바일/데스크톱 미러를 같이 시도하도록 구성되어 있습니다.
+
+기본 크롤링 모드는 `CRAWL_MODE=playwright`입니다.
+필요하면 `http` 또는 `auto`로 바꿔서 실행할 수 있습니다.
+
+`MAX_PAGES_PER_POLL`을 1보다 크게 두면 page=2, page=3 ... 형태의 목록 페이지까지 순차 확인합니다.
+`MAX_ITEMS_PER_POLL`은 최종 수집 상한치이므로 페이지를 늘리더라도 이 값까지만 실제 알림 후보로 사용됩니다.
+
+
+## 환경 변수
+
+| 변수 | 설명 |
+|---|---|
+| `FMKOREA_BOARD_URL` | 모니터링할 게시판 URL (기본값: `https://m.fmkorea.com/hotdeal`) |
+| `FMKOREA_BOARD_URLS` | 추가 후보 게시판 URL(쉼표 구분) — 첫 URL 실패 시 순차 시도 |
+| `CRAWL_MODE` | `playwright` / `auto` / `http` (기본 `playwright`) |
+| `ALERT_KEYWORDS` | 콤마 구분 키워드 (기본: `삼다수,요기요`) |
+| `REQUEST_INTERVAL_MS` | 조회 주기 (밀리초, 기본: `300000`) |
+| `REQUEST_TIMEOUT_MS` | HTTP 타임아웃 (밀리초, 기본: `20000`) |
+| `MAX_ITEMS_PER_POLL` | 한 번 조회에서 분석할 최대 게시글 수 (기본: `25`) |
+| `MAX_PAGES_PER_POLL` | 최근 목록을 확보하기 위해 순회할 최대 페이지 수 (기본: `3`) |
+| `STATE_FILE_PATH` | 중복 방지 저장 경로 (기본: 빈 값, file-state 비활성) |
+| `USE_FILE_STATE` | `true`면 `STATE_FILE_PATH`에 상태 저장, 기본은 `false` |
+| `USE_REDIS_STATE` | `true`면 Redis를 중복 방지 상태 저장소로 사용 |
+| `REDIS_URL` | Redis 연결 URL (예: `redis://fmkorea-hotdeal-redis:6379`) |
+| `REDIS_KEY_PREFIX` | Redis key prefix (기본: `hotdeal:seen:`) |
+| `REDIS_TTL_SECONDS` | Redis 상태 key TTL (초, `0`이면 만료 없음) |
+| `SHOW_RECENT_MATCHES` | 최근 매칭 결과를 매 폴링 시 로그 출력 (`true`/`false`, 기본 `true`) |
+| `LOOKBACK_HOURS` | 최근 조회 윈도우 시간(기본: `168`) |
+| `STARTUP_LOOKBACK_HOURS` | 프로세스 시작 직후 첫 조회에서 사용할 lookback 시간(기본: `24`) |
+| `DRY_RUN` | `true`면 알림 전송 없이 로그만 출력 |
+| `RUN_ONCE` | `true`면 한 번만 실행 후 종료 |
+| `USER_AGENT` | HTTP 요청 User-Agent |
+| `PLAYWRIGHT_WS_ENDPOINT` | 원격 Playwright 브라우저 WebSocket endpoint(선택) |
+| `PLAYWRIGHT_EXECUTABLE_PATH` | 로컬 Chromium/Chrome 실행 파일 경로(선택) |
+| `PLAYWRIGHT_HEADLESS` | Playwright 헤드리스 모드 (`true`/`false`) |
+| `PLAYWRIGHT_NAV_TIMEOUT_MS` | Playwright 페이지 로딩 타임아웃(ms) |
+| `PLAYWRIGHT_WAIT_AFTER_LOAD_MS` | DOM 로딩 후 추가 대기(ms) |
+| `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token |
+| `TELEGRAM_CHAT_ID` | Telegram Chat ID |
+| `POST_SELECTOR` | 게시글 항목 선택자(선택) |
+| `LINK_SELECTOR` | 링크 선택자(선택) |
+| `TITLE_SELECTOR` | 제목 선택자(선택) |
+
+Slack 또는 Telegram 둘 다 설정하면 둘 다 전송됩니다.
+
+## Kubernetes 배포
+
+### 1) BP 기본 모드(권장)
+
+볼륨 없이 배포하려면 아래 스크립트를 사용하세요. 중복 감지는 메모리 기준이라
+컨테이너 재시작 시 상태가 초기화됩니다.
+
+```bash
+bash scripts/apply-k8s-from-config.sh
+```
+
+스크립트는 `config/telegram`, `config/telegram.env`, `config/chatid`, `config/slack*` 값을 읽어
+`fmkorea-hotdeal-monitor-secret`을 생성/업데이트한 뒤
+`redis.yaml -> configmap.yaml -> deployment.yaml` 순서로 apply 합니다.
+
+네임스페이스를 지정하려면 아래처럼 실행하세요.
+
+```bash
+bash scripts/apply-k8s-from-config.sh --namespace hotdeal
+```
+
+`k8s/configmap.yaml`의 `ALERT_KEYWORDS`, `LOOKBACK_HOURS`를 운영 목적에 맞게 수정하세요.
+`k8s/redis.yaml`은 Redis를 StatefulSet + PVC로 배포합니다.
+버전/호환성 관리를 위해 annotation(`component-version`, `compat-major`)을 넣어두었고, `updateStrategy: OnDelete`로 설정되어 있어 이미지 태그/annotation 변경만으로는 자동 재시작되지 않습니다.
+즉 메이저 호환 정책 안에서 버전 값을 올리더라도 운영자가 Pod를 명시적으로 재시작하기 전까지는 기존 Redis 인스턴스를 계속 사용합니다.
+
+### 2) 파일 상태 저장 모드(선택)
+
+중복 감지 상태를 컨테이너 재시작 간 유지하고 싶으면 파일 기반 상태 모드로 배포하세요.
+
+```bash
+bash scripts/apply-k8s-from-config.sh --file-state
+```
+
+실제 적용 없이 검증만 하려면 dry-run을 사용할 수 있습니다.
+
+```bash
+bash scripts/apply-k8s-from-config.sh --dry-run
+```
+
+운영에서 `CONFIG` 기준으로 `USE_FILE_STATE=true`를 보장하면 됩니다.
+`deployment-with-file-state.yaml`은 Redis 대신 파일 상태 저장을 쓰도록 `USE_REDIS_STATE=false`를 고정합니다.
+
+`deployment.yaml`의 이미지 태그(`ghcr.io/<owner>/<repo>:latest`)는 실제 레포지토리 경로에 맞게 수정하세요.
+
+## GitHub Actions
+
+`.github/workflows/ci.yml`는 `main` 브랜치 push 시 Docker build 후 GHCR로 push 합니다.
+`workflow_dispatch`로 수동 실행할 때는 `main` 브랜치에서만 push 하고,
+다른 브랜치에서는 build만 수행합니다.
+
+현재 워크플로우는 Docker Hub가 아니라 GHCR(`ghcr.io`)로 push 하며,
+인증은 `docker/login-action` + GitHub 기본 `GITHUB_TOKEN`으로 처리합니다.
+
+즉 별도 Docker Hub 토큰은 필요하지 않습니다.
+
+GitHub에서 확인할 설정:
+- Repository `Settings > Actions > General > Workflow permissions`: `Read and write permissions`
+- Organization에서 GHCR 패키지 제한이 있는 경우, 해당 repository의 package write 권한 허용
+
+푸시 태그
+- `ghcr.io/<owner>/<repo>:latest`
+- `ghcr.io/<owner>/<repo>:<commit sha>`
+
+## 컨테이너 로그에서 최근 1주일 + 키워드 확인 예시
+
+```
+[$TIME] Daily keyword summary for board (YYYY-MM-DD), keyword(s): 삼다수,요기요 with lookback 168h
+- [IN_WINDOW] [2026-03-03T12:34:56.000Z] [삼다수] 2L ... -> https://www.fmkorea.com/link
+- [UNPARSEABLE] [invalid-date] [삼다수] 3L ... -> https://www.fmkorea.com/link
+```
+
+`ALERT_KEYWORDS`에 `삼다수,요기요`를 넣고 `LOOKBACK_HOURS=168`, `STARTUP_LOOKBACK_HOURS=24`, `SHOW_RECENT_MATCHES=true`로 두면,
+pod 재시작 직후 첫 조회는 최근 24시간을 기준으로 보여주고, 이후 주기 조회는 1주일 기준으로 동작합니다.
+
+파싱이 실패해 `publishedAt`이 비어 있을 때는 최근 로그에서 확인할 수 있도록
+`No parseable date` 항목을 함께 출력합니다.
+`sambdasu-batch.sh` (또는 `run-sambdasu-batch.sh`)는 실제 집계 전용으로 아래와 같이 분류해 보여줍니다.
+
+연속 백그라운드 모드는 `--bg` 파라미터 하나로 실행할 수 있습니다.
+
+```bash
+bash scripts/sambdasu-batch.sh --bg
+```
+
+기본 로그/프로세스 파일:
+- `logs/sambdasu-batch.log`
+- `logs/sambdasu-batch.pid`
+
+중지는 아래처럼 가능합니다.
+
+```bash
+kill "$(cat logs/sambdasu-batch.pid)"
+```
+
+기존 호환을 위해 `run-samdau-batch.sh`, `run-sambda-batch.sh`는 내부적으로
+`run-sambdasu-batch.sh`를 호출합니다.
+
+`config/telegram` 또는 `config/telegram.env`를 사용할 때 Telegram 실제 전송을 하려면
+`TELEGRAM_BOT_TOKEN`과 `TELEGRAM_CHAT_ID`가 모두 있어야 합니다.
+
+`TELEGRAM_CHAT_ID`가 없으면 `config/chatid`의 첫 유효 라인을 자동으로 읽습니다.
+`config/chatid`는 `TELEGRAM_CHAT_ID=...` 또는 값 단독 한 줄 형식 둘 다 지원합니다.
+채널 ID가 `100...` 형태로 저장되어 있으면 실행 시 `-100...` 형태로 자동 보정합니다.
+
+- raw 형식: 1줄 `token`, 2줄 `chat_id`
+- key=value 형식: `TELEGRAM_BOT_TOKEN=...`, `TELEGRAM_CHAT_ID=...`
+
+- `IN_WINDOW`: 최근 24시간 내에 속한 매칭 게시물
+- `OUT_OF_WINDOW`: 날짜는 파싱되었지만 lookback 밖의 매칭 게시물
+- `UNPARSEABLE`: 날짜 파싱 실패/누락 매칭 게시물
+- `파싱 가능한 날짜가 없거나...` 메시지: 추출 날짜 신뢰도가 낮아 매칭 결괏값이 참고용이 됩니다.
+- `차단/접근차단` 메시지: FMKorea 차단 응답이 감지된 상태에서 결과 신뢰도가 낮습니다.
+
+## 일회성 키워드 테스트 (로컬/도커)
+
+```bash
+# 로컬 단발 테스트 (기본 키워드: 삼다수,요기요)
+npm run run:once:local
+
+# 도커 단발 테스트 (기본 키워드: 삼다수,요기요)
+npm run run:once:docker
+```
+
+원하면 키워드를 바꿔 실행할 수 있습니다.
+
+```bash
+ALERT_KEYWORDS="삼다수" npm run run:once:local
+ALERT_KEYWORDS="요기요" npm run run:once:docker
+```
+
+## 라이선스
+
+MIT
