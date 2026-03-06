@@ -162,7 +162,7 @@ bash scripts/apply-k8s-from-config.sh --dry-run
 운영에서 `CONFIG` 기준으로 `USE_FILE_STATE=true`를 보장하면 됩니다.
 `deployment-with-file-state.yaml`은 Redis 대신 파일 상태 저장을 쓰도록 `USE_REDIS_STATE=false`를 고정합니다.
 
-`deployment.yaml`의 이미지 태그(`docker.io/<docker_username>/fmkorea-hotdeal-monitor:latest`)는
+`deployment.yaml`의 이미지 태그(`docker.io/montkim9/fmkorea-hotdeal-monitor:latest`)는
 실제 레포지토리 경로에 맞게 수정하세요.
 
 ## GitHub Actions
@@ -172,16 +172,16 @@ bash scripts/apply-k8s-from-config.sh --dry-run
 다른 브랜치에서는 build만 수행합니다.
 
 워크플로우는 빌드 시작 전에 Docker Hub 로그인 검증을 먼저 수행합니다.
+Docker Hub 사용자명은 `montkim9`로 고정되어 있습니다.
 
-GitHub Repository Secrets에 아래 2개를 설정하세요.
-- `docker_username`
+GitHub Repository Secrets에 아래 항목을 설정하세요.
 - `docker_password`
 
-참고: 기존 대문자 시크릿(`DOCKER_USERNAME`, `DOCKER_PASSWORD`)도 fallback으로 지원합니다.
+참고: 기존 대문자 시크릿(`DOCKER_PASSWORD`)도 fallback으로 지원합니다.
 
 푸시 태그
-- `<docker_username>/fmkorea-hotdeal-monitor:latest`
-- `<docker_username>/fmkorea-hotdeal-monitor:<commit sha 6자리>`
+- `montkim9/fmkorea-hotdeal-monitor:latest`
+- `montkim9/fmkorea-hotdeal-monitor:<commit sha 6자리>`
 
 ## 컨테이너 로그에서 최근 1주일 + 키워드 확인 예시
 

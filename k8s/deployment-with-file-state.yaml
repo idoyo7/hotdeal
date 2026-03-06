@@ -24,7 +24,7 @@ spec:
             claimName: fmkorea-hotdeal-monitor-data
       containers:
         - name: monitor
-          image: ghcr.io/<owner>/<repo>:latest
+          image: docker.io/montkim9/fmkorea-hotdeal-monitor:latest
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:

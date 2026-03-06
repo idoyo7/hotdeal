@@ -22,11 +22,11 @@ jobs:
 
       - name: Validate Docker Hub credentials
         run: |
-          if [ -z "${DOCKERHUB_USERNAME}" ] || [ -z "${DOCKERHUB_PASSWORD}" ]; then
-            echo "Missing Docker Hub credentials. Set repository secrets: docker_username and docker_password." >&2
+          if [ -z "${DOCKERHUB_PASSWORD}" ]; then
+            echo "Missing Docker Hub credentials. Set repository secret: docker_password." >&2
             exit 1
           fi
-          echo "Docker Hub credentials detected for CI login."
+          echo "Docker Hub credentials detected for account ${DOCKERHUB_USERNAME}."
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
