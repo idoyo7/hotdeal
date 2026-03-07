@@ -15,6 +15,16 @@ spec:
         app: fmkorea-hotdeal-monitor
     spec:
       serviceAccountName: fmkorea-hotdeal-monitor
+      initContainers:
+        - name: wait-for-redis
+          image: redis:7.2.7-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - >-
+              until redis-cli -h fmkorea-hotdeal-redis -p 6379 ping | grep -q PONG;
+              do echo waiting for redis; sleep 2; done
       volumes:
         - name: shm
           emptyDir:
