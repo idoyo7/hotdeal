@@ -25,12 +25,29 @@ const toStatusCode = (error: unknown): number | undefined => {
     return undefined;
   }
 
+  const codeValue = Reflect.get(error, 'code');
+  if (typeof codeValue === 'number') {
+    return codeValue;
+  }
+
   const statusCodeValue = Reflect.get(error, 'statusCode');
   if (typeof statusCodeValue === 'number') {
     return statusCodeValue;
   }
 
   const bodyValue = Reflect.get(error, 'body');
+  if (typeof bodyValue === 'string') {
+    try {
+      const parsed = JSON.parse(bodyValue) as Record<string, unknown>;
+      const bodyCode = parsed.code;
+      if (typeof bodyCode === 'number') {
+        return bodyCode;
+      }
+    } catch {
+      return undefined;
+    }
+  }
+
   if (bodyValue && typeof bodyValue === 'object') {
     const codeValue = Reflect.get(bodyValue, 'code');
     if (typeof codeValue === 'number') {
