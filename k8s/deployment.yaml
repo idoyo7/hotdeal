@@ -6,6 +6,13 @@ metadata:
     app: fmkorea-hotdeal-monitor
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
+  revisionHistoryLimit: 5
   selector:
     matchLabels:
       app: fmkorea-hotdeal-monitor
@@ -15,16 +22,7 @@ spec:
         app: fmkorea-hotdeal-monitor
     spec:
       serviceAccountName: fmkorea-hotdeal-monitor
-      initContainers:
-        - name: wait-for-redis
-          image: redis:7.2.7-alpine
-          imagePullPolicy: IfNotPresent
-          command:
-            - sh
-            - -c
-            - >-
-              until redis-cli -h fmkorea-hotdeal-redis -p 6379 ping | grep -q PONG;
-              do echo waiting for redis; sleep 2; done
+      terminationGracePeriodSeconds: 90
       volumes:
         - name: shm
           emptyDir:
@@ -44,6 +42,40 @@ spec:
             limits:
               cpu: "1000m"
               memory: "1Gi"
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "tr '\\000' ' ' < /proc/1/cmdline | grep -q 'dist/index.js'"
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "tr '\\000' ' ' < /proc/1/cmdline | grep -q 'dist/index.js'"
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "tr '\\000' ' ' < /proc/1/cmdline | grep -q 'dist/index.js'"
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - "kill -TERM 1; sleep 15"
           volumeMounts:
             - name: shm
               mountPath: /dev/shm

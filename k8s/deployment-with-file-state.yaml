@@ -6,6 +6,9 @@ metadata:
     app: fmkorea-hotdeal-monitor
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 5
   selector:
     matchLabels:
       app: fmkorea-hotdeal-monitor
@@ -15,6 +18,7 @@ spec:
         app: fmkorea-hotdeal-monitor
     spec:
       serviceAccountName: fmkorea-hotdeal-monitor
+      terminationGracePeriodSeconds: 90
       volumes:
         - name: shm
           emptyDir:
@@ -37,6 +41,40 @@ spec:
             limits:
               cpu: "1000m"
               memory: "1Gi"
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "tr '\\000' ' ' < /proc/1/cmdline | grep -q 'dist/index.js'"
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "tr '\\000' ' ' < /proc/1/cmdline | grep -q 'dist/index.js'"
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "tr '\\000' ' ' < /proc/1/cmdline | grep -q 'dist/index.js'"
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - "kill -TERM 1; sleep 15"
           env:
             - name: POD_NAME
               valueFrom:

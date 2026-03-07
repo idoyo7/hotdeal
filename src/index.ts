@@ -112,17 +112,20 @@ const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMat
     });
 
   const printPosts = (
-    label: string,
-    tag: string,
+    tag: 'IN_WINDOW' | 'OUT_OF_WINDOW' | 'UNPARSEABLE',
     items: Array<{ id: string; title: string; link: string; publishedAt?: string }>
   ): void => {
-    if (items.length === 0) {
-      return;
-    }
-
-    logger.debug(label);
     for (const post of items) {
-      logger.debug(`- [${tag}] [${formatPostDate(post.publishedAt)}] ${post.title} -> ${post.link}`);
+      logger.debug('recent match item', {
+        event: 'monitor.matches.item',
+        classification: tag,
+        post: {
+          id: post.id,
+          title: post.title,
+          link: post.link,
+          publishedAt: formatPostDate(post.publishedAt),
+        },
+      });
     }
   };
 
@@ -142,20 +145,32 @@ const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMat
   const outOfWindowDedup = dedupeById(outOfWindow);
   const parseFailedDedup = dedupeById(parseFailed);
 
-  logger.debug(
-    `Daily keyword summary for board (${today}), keyword(s): ${config.keywords.join(', ')} with lookback ${config.showRecentHours}h`
-  );
+  logger.debug('recent matches summary', {
+    event: 'monitor.matches.summary',
+    boardDate: today,
+    keywords: config.keywords,
+    lookbackHours: config.showRecentHours,
+    result: {
+      inWindow: inWindowDedup.length,
+      outOfWindow: outOfWindowDedup.length,
+      unparseable: parseFailedDedup.length,
+    },
+  });
 
   if (inWindowDedup.length === 0 && outOfWindowDedup.length === 0 && parseFailedDedup.length === 0) {
-    logger.debug('No keyword-matched posts found in parsed candidates.');
+    logger.debug('no keyword matches in parsed candidates', {
+      event: 'monitor.matches.empty',
+      keywords: config.keywords,
+      lookbackHours: config.showRecentHours,
+    });
     return;
   }
 
-  printPosts(`Matched within lookback (${config.showRecentHours}h):`, 'IN_WINDOW', inWindowDedup);
-  printPosts(`Matched but parsed date is outside lookback:`, 'OUT_OF_WINDOW', outOfWindowDedup);
+  printPosts('IN_WINDOW', inWindowDedup);
+  printPosts('OUT_OF_WINDOW', outOfWindowDedup);
 
   if (parseFailedDedup.length > 0) {
-    printPosts(`Matched but date parse failed or date missing:`, 'UNPARSEABLE', parseFailedDedup);
+    printPosts('UNPARSEABLE', parseFailedDedup);
   }
 };
 
@@ -229,9 +244,15 @@ const pollOnce = async (
     const matchedKeywords = config.keywords.length > 0 ? findMatches(post.title, config.keywords) : ['*'];
 
     if (isDryRun) {
-      logger.debug(
-        `DRY-RUN: ${post.title} (matched ${matchedKeywords.join(', ')}) - no webhook call`
-      );
+      logger.debug('delivery dry-run skipped webhook', {
+        event: 'delivery.dryRun.skippedSend',
+        post: {
+          id: post.id,
+          title: post.title,
+          link: post.link,
+        },
+        matchedKeywords,
+      });
       dryRunPostCount += 1;
       continue;
     }
@@ -243,19 +264,33 @@ const pollOnce = async (
       await store.unclaim(post.id);
       const reason = error instanceof Error ? error.message : String(error);
       failedPostCount += 1;
-      logger.error(
-        `Delivery error: ${post.title} (${reason}, claim released for retry)`,
-        error
-      );
+      logger.error('delivery request error', error, {
+        event: 'delivery.error',
+        retryReleased: true,
+        reason,
+        post: {
+          id: post.id,
+          title: post.title,
+          link: post.link,
+        },
+        matchedKeywords,
+      });
       continue;
     }
 
     if (results.length === 0) {
       await store.unclaim(post.id);
       failedPostCount += 1;
-      logger.error(
-        `Skipped notify: ${post.title} (no notifier target active, claim released)`
-      );
+      logger.error('delivery skipped no active notifier target', undefined, {
+        event: 'delivery.skipped',
+        reason: 'no_notifier_target_active',
+        retryReleased: true,
+        post: {
+          id: post.id,
+          title: post.title,
+          link: post.link,
+        },
+      });
       continue;
     }
 
@@ -269,17 +304,39 @@ const pollOnce = async (
     if (okCount === 0) {
       await store.unclaim(post.id);
       failedPostCount += 1;
-      logger.error(
-        `Delivery failed: ${post.title} (0 sent${suffix}, claim released for retry)`
-      );
+      logger.error('delivery failed all notifier targets', undefined, {
+        event: 'delivery.failed',
+        retryReleased: true,
+        post: {
+          id: post.id,
+          title: post.title,
+          link: post.link,
+        },
+        delivery: {
+          okCount,
+          failCount,
+          details: suffix,
+        },
+      });
       continue;
     }
 
     anySuccessfulDelivery = true;
     notifiedPostCount += 1;
-    logger.info(
-      `Notified: ${post.title} (${okCount} sent${suffix})`
-    );
+    logger.info('delivery sent', {
+      event: 'delivery.sent',
+      post: {
+        id: post.id,
+        title: post.title,
+        link: post.link,
+      },
+      delivery: {
+        okCount,
+        failCount,
+        details: suffix,
+      },
+      matchedKeywords,
+    });
   }
 
   if (!useRedisState && anySuccessfulDelivery) {
@@ -305,7 +362,10 @@ const main = async (): Promise<void> => {
       return;
     }
     shutdownRequested = true;
-    logger.info(`Received ${signal}; graceful shutdown requested`);
+    logger.info('graceful shutdown requested', {
+      event: 'monitor.shutdown.requested',
+      signal,
+    });
   };
 
   process.once('SIGTERM', () => requestShutdown('SIGTERM'));
@@ -344,7 +404,11 @@ const main = async (): Promise<void> => {
 
   if (!config.notifier.dryRun) {
     if (explicitlySelected && selectedTargets.includes('slack') && !config.notifier.slackWebhookUrl) {
-      logger.error('SLACK_WEBHOOK_URL is required when slack is selected in NOTIFIER_TARGETS.');
+      logger.error('invalid notifier configuration', undefined, {
+        event: 'monitor.config.invalid',
+        target: 'slack',
+        missing: ['SLACK_WEBHOOK_URL'],
+      });
       process.exit(1);
     }
 
@@ -353,41 +417,74 @@ const main = async (): Promise<void> => {
       selectedTargets.includes('telegram') &&
       (!config.notifier.telegramBotToken || !config.notifier.telegramChatId)
     ) {
-      logger.error('TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when telegram is selected in NOTIFIER_TARGETS.');
+      logger.error('invalid notifier configuration', undefined, {
+        event: 'monitor.config.invalid',
+        target: 'telegram',
+        missing: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'],
+      });
       process.exit(1);
     }
 
     if (explicitlySelected && selectedTargets.includes('discord') && !config.notifier.discordWebhookUrl) {
-      logger.error('DISCORD_WEBHOOK_URL is required when discord is selected in NOTIFIER_TARGETS.');
+      logger.error('invalid notifier configuration', undefined, {
+        event: 'monitor.config.invalid',
+        target: 'discord',
+        missing: ['DISCORD_WEBHOOK_URL'],
+      });
       process.exit(1);
     }
   }
 
   if (!slackConfigured && !telegramConfigured && !discordConfigured && !config.notifier.dryRun) {
-    logger.error('No notifier configured. Set selected notifier credentials or adjust NOTIFIER_TARGETS.');
+    logger.error('no notifier configured', undefined, {
+      event: 'monitor.config.invalid',
+      target: 'all',
+      missing: ['slack/telegram/discord credentials'],
+      dryRun: config.notifier.dryRun,
+    });
     process.exit(1);
   }
 
-  logger.info(
-    `Notifier targets: ${selectedTargets.length === 0 ? 'auto' : selectedTargets.join(',')}`
-  );
+  logger.info('notifier targets configured', {
+    event: 'monitor.startup.notifierTargets',
+    targets: selectedTargets.length === 0 ? ['auto'] : selectedTargets,
+    explicitlySelected,
+  });
 
   if (store.isRedisEnabled()) {
-    logger.info(`Using Redis-based state. prefix=${store.redisPrefix()}`);
+    logger.info('state store selected', {
+      event: 'monitor.startup.stateStore',
+      mode: 'redis',
+      redisPrefix: store.redisPrefix(),
+    });
   } else if (config.useFileState) {
-    logger.info(`Using file-based state: ${config.seenStateFile}`);
+    logger.info('state store selected', {
+      event: 'monitor.startup.stateStore',
+      mode: 'file',
+      path: config.seenStateFile,
+    });
   } else {
-    logger.info('Using in-memory state. State is reset when pod restarts.');
+    logger.info('state store selected', {
+      event: 'monitor.startup.stateStore',
+      mode: 'memory',
+      resetOnRestart: true,
+    });
   }
 
   if (config.keywords.length === 0) {
-    logger.info('No ALERT_KEYWORDS configured. All posts will be notified.');
+    logger.info('all posts notification mode enabled', {
+      event: 'monitor.startup.noKeywordFilter',
+    });
   }
 
   if (config.leaderElectionEnabled) {
-    logger.info(
-      `Leader election enabled. lease=${config.leaderElectionNamespace}/${config.leaderElectionLeaseName}, identity=${config.leaderElectionIdentity}`
-    );
+    logger.info('leader election enabled', {
+      event: 'leaderElection.enabled',
+      lease: `${config.leaderElectionNamespace}/${config.leaderElectionLeaseName}`,
+      identity: config.leaderElectionIdentity,
+      leaseDurationSeconds: config.leaderElectionLeaseDurationSeconds,
+      renewIntervalMs: config.leaderElectionRenewIntervalMs,
+    });
   }
 
   let firstRun = true;
@@ -460,6 +557,8 @@ const main = async (): Promise<void> => {
 };
 
 main().catch((error) => {
-  logger.error('Monitor failed', error);
+  logger.error('monitor process failed', error, {
+    event: 'monitor.process.failed',
+  });
   process.exit(1);
 });

@@ -167,7 +167,12 @@ export class LeaderElector {
         await this.releaseLease();
       } catch (error: unknown) {
         const reason = error instanceof Error ? error.message : String(error);
-        logger.error(`Leader election close failed while releasing lease (${reason})`, error);
+        logger.error('leader election close failed while releasing lease', error, {
+          event: 'leaderElection.close.releaseLease.failed',
+          reason,
+          identity: this.identity,
+          lease: `${this.namespace}/${this.leaseName}`,
+        });
       }
     }
   }
@@ -195,8 +200,14 @@ export class LeaderElector {
         await this.tryAcquireOrRenew();
       } catch (error: unknown) {
         const reason = error instanceof Error ? error.message : String(error);
-        this.setLeaderState(false, this.observedLeader || 'unknown');
-        logger.error(`Leader election renew failed (${reason})`, error);
+        this.setLeaderState(false, this.observedLeader || 'unknown', 'renew_error');
+        logger.error('leader election renew failed', error, {
+          event: 'leaderElection.renew.failed',
+          reason,
+          identity: this.identity,
+          observedLeader: this.observedLeader || 'unknown',
+          lease: `${this.namespace}/${this.leaseName}`,
+        });
       }
     }
   }
@@ -258,7 +269,7 @@ export class LeaderElector {
 
     try {
       await this.api.create(lease);
-      this.setLeaderState(true, this.identity);
+      this.setLeaderState(true, this.identity, 'lease_create');
       return true;
     } catch (error: unknown) {
       const statusCode = toStatusCode(error);
@@ -320,19 +331,19 @@ export class LeaderElector {
 
       try {
         await this.api.replace(replacement);
-        this.setLeaderState(true, this.identity);
+        this.setLeaderState(true, this.identity, 'lease_renew');
         return true;
       } catch (error: unknown) {
         const statusCode = toStatusCode(error);
         if (statusCode === 409) {
-          this.setLeaderState(false, holderIdentity);
+          this.setLeaderState(false, holderIdentity, 'lease_conflict');
           return false;
         }
         throw error;
       }
     }
 
-    this.setLeaderState(false, holderIdentity);
+    this.setLeaderState(false, holderIdentity, 'standby_observed');
     return false;
   }
 
@@ -375,33 +386,65 @@ export class LeaderElector {
 
     try {
       await this.api.replace(replacement);
-      this.setLeaderState(false, 'none');
-      logger.info(`Leader election lease released (lease=${this.namespace}/${this.leaseName})`);
+      this.setLeaderState(false, 'none', 'shutdown_release');
+      logger.info('leader election lease released', {
+        event: 'leaderElection.lease.released',
+        identity: this.identity,
+        lease: `${this.namespace}/${this.leaseName}`,
+      });
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : String(error);
-      logger.error(`Leader election lease release failed (${reason})`, error);
+      logger.error('leader election lease release failed', error, {
+        event: 'leaderElection.lease.releaseFailed',
+        reason,
+        identity: this.identity,
+        lease: `${this.namespace}/${this.leaseName}`,
+      });
     }
   }
 
-  private setLeaderState(isLeader: boolean, holderIdentity: string): void {
+  private setLeaderState(
+    isLeader: boolean,
+    holderIdentity: string,
+    reason:
+      | 'lease_create'
+      | 'lease_renew'
+      | 'lease_conflict'
+      | 'standby_observed'
+      | 'renew_error'
+      | 'shutdown_release'
+  ): void {
     const holder = holderIdentity || 'none';
 
     if (isLeader && !this.leader) {
-      logger.info(
-        `Leader election acquired (identity=${this.identity}, lease=${this.namespace}/${this.leaseName})`
-      );
+      logger.info('leader election acquired', {
+        event: 'leaderElection.state.changed',
+        state: 'acquired',
+        identity: this.identity,
+        lease: `${this.namespace}/${this.leaseName}`,
+      });
     }
 
     if (!isLeader && this.leader) {
-      logger.info(
-        `Leader election lost (current leader=${holder})`
-      );
+      logger.info(reason === 'shutdown_release' ? 'leader election released' : 'leader election lost', {
+        event: 'leaderElection.state.changed',
+        state: reason === 'shutdown_release' ? 'released' : 'lost',
+        reason,
+        identity: this.identity,
+        currentLeader: holder,
+        lease: `${this.namespace}/${this.leaseName}`,
+      });
     }
 
-    if (!isLeader && this.observedLeader !== holder) {
-      logger.info(
-        `Leader election standby (current leader=${holder})`
-      );
+    if (!isLeader && this.observedLeader !== holder && reason !== 'shutdown_release') {
+      logger.info('leader election standby', {
+        event: 'leaderElection.state.changed',
+        state: 'standby',
+        reason,
+        identity: this.identity,
+        currentLeader: holder,
+        lease: `${this.namespace}/${this.leaseName}`,
+      });
       this.observedLeader = holder;
     }
 

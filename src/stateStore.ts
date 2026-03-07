@@ -44,10 +44,11 @@ export class StateStore {
 
         if (shouldLog) {
           this.redisLastLoggedAtMs = nowMs;
-          logger.error(
-            `Redis client error (attempt=${this.redisErrorCount}, retrying connection)`,
-            error
-          );
+          logger.error('redis client error', error, {
+            event: 'stateStore.redis.clientError',
+            attempt: this.redisErrorCount,
+            retrying: true,
+          });
         }
       });
     }
@@ -56,11 +57,18 @@ export class StateStore {
   async load(): Promise<void> {
     if (this.useRedis) {
       if (this.redis && !this.redis.isOpen) {
-        logger.info('Connecting to Redis state store');
+        logger.info('connecting to redis state store', {
+          event: 'stateStore.redis.connecting',
+          keyPrefix: this.redisKeyPrefix,
+          ttlSeconds: this.redisTtlSeconds,
+        });
         await this.redis.connect();
 
         if (this.redisErrorCount > 0) {
-          logger.info(`Redis connected after ${this.redisErrorCount} transient error(s)`);
+          logger.info('redis connection recovered', {
+            event: 'stateStore.redis.connected',
+            transientErrorCount: this.redisErrorCount,
+          });
           this.redisErrorCount = 0;
           this.redisLastLoggedAtMs = 0;
         }
