@@ -47,7 +47,7 @@ spec:
               command:
                 - sh
                 - -c
-                - "tr '\\000' ' ' < /proc/1/cmdline | grep -q 'dist/index.js'"
+                - "test -f /tmp/monitor-ready"
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 24
@@ -56,7 +56,7 @@ spec:
               command:
                 - sh
                 - -c
-                - "tr '\\000' ' ' < /proc/1/cmdline | grep -q 'dist/index.js'"
+                - "test -f /tmp/monitor-ready"
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3

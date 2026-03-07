@@ -4,6 +4,7 @@ import {
   findRecentMatchedPosts,
   keywordMatchesTitle,
 } from './monitor.js';
+import { unlinkSync, writeFileSync } from 'node:fs';
 import { getConfig, AppConfig, type NotifierTarget } from './config.js';
 import { StateStore } from './stateStore.js';
 import { sendAlerts, type DeliveryResult } from './notifier.js';
@@ -14,6 +15,26 @@ const wait = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+
+const readinessPath = '/tmp/monitor-ready';
+
+const setReadinessMarker = (ready: boolean): void => {
+  try {
+    if (ready) {
+      writeFileSync(readinessPath, 'ready\n', 'utf8');
+      return;
+    }
+    unlinkSync(readinessPath);
+  } catch (error: unknown) {
+    const reason = error instanceof Error ? error.message : String(error);
+    logger.debug('readiness marker update failed', {
+      event: 'monitor.readiness.markerFailed',
+      ready,
+      path: readinessPath,
+      reason,
+    });
+  }
+};
 
 const waitUntilNextPollOrShutdown = async (
   totalMs: number,
@@ -353,6 +374,7 @@ const pollOnce = async (
 };
 
 const main = async (): Promise<void> => {
+  setReadinessMarker(false);
   const config = getConfig();
   setLogLevel(config.logLevel);
   let shutdownRequested = false;
@@ -362,6 +384,7 @@ const main = async (): Promise<void> => {
       return;
     }
     shutdownRequested = true;
+    setReadinessMarker(false);
     logger.info('graceful shutdown requested', {
       event: 'monitor.shutdown.requested',
       signal,
@@ -487,6 +510,12 @@ const main = async (): Promise<void> => {
     });
   }
 
+  setReadinessMarker(true);
+  logger.info('monitor readiness enabled', {
+    event: 'monitor.readiness.enabled',
+    path: readinessPath,
+  });
+
   let firstRun = true;
   try {
     while (true) {
@@ -551,6 +580,7 @@ const main = async (): Promise<void> => {
       await waitUntilNextPollOrShutdown(config.requestIntervalMs, () => shutdownRequested);
     }
   } finally {
+    setReadinessMarker(false);
     await leaderElector.close({ releaseLease: shutdownRequested });
     await store.close();
   }

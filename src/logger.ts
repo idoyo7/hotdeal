@@ -12,6 +12,8 @@ const shouldLog = (level: LogLevel): boolean => priorities[level] >= priorities[
 
 type LogFields = Record<string, unknown>;
 
+const reservedKeys = new Set(['level', 'time', 'message', 'error']);
+
 const toSerializableError = (error: unknown): unknown => {
   if (error instanceof Error) {
     return {
@@ -37,6 +39,9 @@ const formatLog = (
 
   if (fields) {
     for (const [key, value] of Object.entries(fields)) {
+      if (reservedKeys.has(key)) {
+        continue;
+      }
       payload[key] = value;
     }
   }
