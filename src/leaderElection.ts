@@ -101,6 +101,8 @@ export class LeaderElector {
 
   private renewLoop?: Promise<void>;
 
+  private electionInFlight?: Promise<boolean>;
+
   private wakeRenewLoop?: () => void;
 
   private leader = false;
@@ -125,7 +127,7 @@ export class LeaderElector {
     kubeConfig.loadFromDefault();
     this.api = KubernetesObjectApi.makeApiClient(kubeConfig);
 
-    await this.tryAcquireOrRenew();
+    await this.runElectionRound();
     this.renewLoop = this.startRenewLoop();
   }
 
@@ -143,7 +145,7 @@ export class LeaderElector {
         return;
       }
 
-      await this.tryAcquireOrRenew();
+      await this.runElectionRound();
       if (this.leader) {
         return;
       }
@@ -197,7 +199,7 @@ export class LeaderElector {
       }
 
       try {
-        await this.tryAcquireOrRenew();
+        await this.runElectionRound();
       } catch (error: unknown) {
         const reason = error instanceof Error ? error.message : String(error);
         this.setLeaderState(false, this.observedLeader || 'unknown', 'renew_error');
@@ -210,6 +212,18 @@ export class LeaderElector {
         });
       }
     }
+  }
+
+  private async runElectionRound(): Promise<boolean> {
+    if (this.electionInFlight) {
+      return this.electionInFlight;
+    }
+
+    this.electionInFlight = this.tryAcquireOrRenew().finally(() => {
+      this.electionInFlight = undefined;
+    });
+
+    return this.electionInFlight;
   }
 
   private leaseHeader(): {
