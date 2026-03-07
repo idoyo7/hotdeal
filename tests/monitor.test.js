@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { findMatchingPosts, findRecentMatchedPosts } from '../dist/monitor.js';
+import { fetchLatestPosts, findMatchingPosts, findRecentMatchedPosts } from '../dist/monitor.js';
 
 const makePost = (title, hoursAgo, hasDate = true) => ({
   title,
@@ -53,4 +53,71 @@ test('findRecentMatchedPosts includes unmatched-date posts when explicitly enabl
 
   assert.strictEqual(recent.length, 2);
   assert.deepStrictEqual(recent.map((post) => post.id), ['id:삼다수 날짜없음', 'id:삼다수 잘못된날짜']);
+});
+
+test('fetchLatestPosts prefers descriptive title over vote-count anchor for same post id', async () => {
+  const originalFetch = globalThis.fetch;
+  const html = `
+    <html><body>
+      <a href="https://www.fmkorea.com/9564843258">추천 6</a>
+      <a class="hotdeal_var8Y" href="https://www.fmkorea.com/9564843258">제주삼다수 그린 무라벨 2L 18개 [58]</a>
+    </body></html>
+  `;
+
+  globalThis.fetch = async () => new Response(html, { status: 200 });
+
+  try {
+    const posts = await fetchLatestPosts({
+      boardUrl: 'https://www.fmkorea.com/index.php?mid=hotdeal&page=2',
+      boardUrls: ['https://www.fmkorea.com/index.php?mid=hotdeal&page=2'],
+      crawlMode: 'http',
+      requestIntervalMs: 1000,
+      requestTimeoutMs: 5000,
+      maxPagesPerPoll: 1,
+      maxItemsPerPoll: 30,
+      startupMaxPagesPerPoll: 1,
+      startupMaxItemsPerPoll: 30,
+      seenStateFile: './seen.json',
+      useFileState: false,
+      useRedisState: false,
+      redisUrl: undefined,
+      redisKeyPrefix: 'hotdeal:seen:',
+      redisTtlSeconds: 604800,
+      leaderElectionEnabled: false,
+      leaderElectionLeaseName: 'test',
+      leaderElectionNamespace: 'default',
+      leaderElectionIdentity: 'test-pod',
+      leaderElectionLeaseDurationSeconds: 45,
+      leaderElectionRenewIntervalMs: 10000,
+      logLevel: 'info',
+      lookbackHours: 3,
+      startupLookbackHours: 168,
+      showRecentMatches: false,
+      showRecentHours: 3,
+      pollOnce: true,
+      userAgent: 'test-agent',
+      playwrightWsEndpoint: undefined,
+      playwrightExecutablePath: undefined,
+      playwrightHeadless: true,
+      playwrightNavigationTimeoutMs: 15000,
+      playwrightWaitAfterLoadMs: 1500,
+      postSelector: undefined,
+      linkSelector: undefined,
+      titleSelector: undefined,
+      keywords: ['삼다수'],
+      notifier: {
+        slackWebhookUrl: undefined,
+        telegramBotToken: undefined,
+        telegramChatId: undefined,
+        discordWebhookUrl: undefined,
+        targets: [],
+        dryRun: true,
+      },
+    });
+
+    assert.strictEqual(posts.length, 1);
+    assert.strictEqual(posts[0].title, '제주삼다수 그린 무라벨 2L 18개 [58]');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

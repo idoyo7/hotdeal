@@ -19,6 +19,27 @@ const normalizeKeywordText = (value: string): string =>
     .normalize('NFKC')
     .replace(/[\p{P}\p{S}\s]+/gu, '');
 
+const scoreExtractedTitle = (title: string): number => {
+  const clean = title.trim();
+  if (!clean) {
+    return 0;
+  }
+
+  if (/^추천\s*-?\d+$/u.test(clean)) {
+    return 1;
+  }
+
+  if (/^\d+$/u.test(clean)) {
+    return 1;
+  }
+
+  if (/^(무료|무배)$/u.test(clean)) {
+    return 1;
+  }
+
+  return clean.length;
+};
+
 export const keywordMatchesTitle = (title: string, keyword: string): boolean => {
   const normalizedKeyword = normalizeKeywordText(keyword);
   if (!normalizedKeyword) {
@@ -562,7 +583,7 @@ const getPublishedDate = ($node: CheerioNode, now: Date): string | undefined => 
 
 const extractFromCandidates = (doc: CheerioAPI, baseUrl: string, config: AppConfig): HotdealPost[] => {
   const result: HotdealPost[] = [];
-  const used = new Set<string>();
+  const used = new Map<string, number>();
   const now = new Date();
 
   const addPost = (title: string, url: string, publishedAt?: string): void => {
@@ -573,11 +594,19 @@ const extractFromCandidates = (doc: CheerioAPI, baseUrl: string, config: AppConf
 
     const normalized = normalizeUrl(baseUrl, url).split('#')[0];
     const stableId = normalizePostId(normalized);
-    if (!normalized || used.has(stableId) || !isLikelyPostUrl(normalized)) {
+    if (!normalized || !isLikelyPostUrl(normalized)) {
       return;
     }
 
-    used.add(stableId);
+    const existingIndex = used.get(stableId);
+    if (existingIndex !== undefined) {
+      if (scoreExtractedTitle(cleanTitle) > scoreExtractedTitle(result[existingIndex]?.title ?? '')) {
+        result[existingIndex] = { title: cleanTitle, link: normalized, id: stableId, publishedAt };
+      }
+      return;
+    }
+
+    used.set(stableId, result.length);
     result.push({ title: cleanTitle, link: normalized, id: stableId, publishedAt });
   };
 
@@ -632,17 +661,25 @@ const extractWithFallback = (doc: CheerioAPI, baseUrl: string, config: AppConfig
 
   const titleHints = ['title', 'subject', 'name', 'subject-link'];
   const fallback: HotdealPost[] = [];
-  const used = new Set<string>();
+  const used = new Map<string, number>();
 
   const add = (title: string, link: string, publishedAt?: string): void => {
     const cleanTitle = title.trim().replace(/\s+/g, ' ');
     const normalized = normalizeUrl(baseUrl, link).split('#')[0];
     const stableId = normalizePostId(normalized);
-    if (!cleanTitle || used.has(stableId) || !isLikelyPostUrl(normalized)) {
+    if (!cleanTitle || !isLikelyPostUrl(normalized)) {
       return;
     }
 
-    used.add(stableId);
+    const existingIndex = used.get(stableId);
+    if (existingIndex !== undefined) {
+      if (scoreExtractedTitle(cleanTitle) > scoreExtractedTitle(fallback[existingIndex]?.title ?? '')) {
+        fallback[existingIndex] = { title: cleanTitle, link: normalized, id: stableId, publishedAt };
+      }
+      return;
+    }
+
+    used.set(stableId, fallback.length);
     fallback.push({ title: cleanTitle, link: normalized, id: stableId, publishedAt });
   };
 
