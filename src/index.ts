@@ -282,9 +282,80 @@ const pollOnce = async (
   reportRecentMatches(reportConfig, posts);
 
   const effectiveLookbackHours = Math.max(1, recentHoursOverride ?? config.lookbackHours);
+  const keywordMatched = config.keywords.length > 0
+    ? findMatchingPosts(posts, config.keywords)
+    : posts;
   const candidates = config.keywords.length > 0
     ? findRecentMatchedPosts(posts, config.keywords, effectiveLookbackHours, false)
     : findRecentMatchedPosts(posts, [''], effectiveLookbackHours, false);
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - effectiveLookbackHours * 60 * 60_000);
+  let unparseableCount = 0;
+  let outOfWindowCount = 0;
+  const unparseableSamples: Array<{ id: string; title: string; link: string; publishedAt?: string }> = [];
+  const outOfWindowSamples: Array<{ id: string; title: string; link: string; publishedAt?: string }> = [];
+
+  for (const post of keywordMatched) {
+    if (!post.publishedAt) {
+      unparseableCount += 1;
+      if (unparseableSamples.length < 3) {
+        unparseableSamples.push({
+          id: post.id,
+          title: post.title,
+          link: post.link,
+          publishedAt: post.publishedAt,
+        });
+      }
+      continue;
+    }
+
+    const parsed = new Date(post.publishedAt);
+    if (Number.isNaN(parsed.getTime())) {
+      unparseableCount += 1;
+      if (unparseableSamples.length < 3) {
+        unparseableSamples.push({
+          id: post.id,
+          title: post.title,
+          link: post.link,
+          publishedAt: post.publishedAt,
+        });
+      }
+      continue;
+    }
+
+    if (parsed < cutoff || parsed > now) {
+      outOfWindowCount += 1;
+      if (outOfWindowSamples.length < 3) {
+        outOfWindowSamples.push({
+          id: post.id,
+          title: post.title,
+          link: post.link,
+          publishedAt: post.publishedAt,
+        });
+      }
+    }
+  }
+
+  if (candidates.length === 0 || outOfWindowCount > 0 || unparseableCount > 0) {
+    logger.info('candidate pipeline summary', {
+      event: 'monitor.cycle.pipeline',
+      options: {
+        lookbackHours: effectiveLookbackHours,
+      },
+      result: {
+        fetched: posts.length,
+        keywordMatched: keywordMatched.length,
+        candidates: candidates.length,
+        outOfWindow: outOfWindowCount,
+        unparseable: unparseableCount,
+      },
+      sample: {
+        outOfWindow: outOfWindowSamples,
+        unparseable: unparseableSamples,
+      },
+    });
+  }
+
   const fresh: typeof candidates = [];
   const isDryRun = config.notifier.dryRun;
   const useRedisState = store.isRedisEnabled();
