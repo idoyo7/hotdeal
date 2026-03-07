@@ -159,6 +159,14 @@ const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMat
   }
 };
 
+type PollCycleResult = {
+  candidateCount: number;
+  freshCount: number;
+  notifiedPostCount: number;
+  dryRunPostCount: number;
+  failedPostCount: number;
+};
+
 const pollOnce = async (
   config: AppConfig,
   store: StateStore,
@@ -167,7 +175,7 @@ const pollOnce = async (
     maxPagesPerPoll: number;
     maxItemsPerPoll: number;
   }
-): Promise<void> => {
+): Promise<PollCycleResult> => {
   const fetchConfig = fetchOverrides
     ? {
         ...config,
@@ -189,6 +197,9 @@ const pollOnce = async (
   const fresh: typeof candidates = [];
   const isDryRun = config.notifier.dryRun;
   const useRedisState = store.isRedisEnabled();
+  let notifiedPostCount = 0;
+  let dryRunPostCount = 0;
+  let failedPostCount = 0;
 
   for (const post of candidates) {
     if (isDryRun && useRedisState) {
@@ -204,8 +215,13 @@ const pollOnce = async (
   }
 
   if (fresh.length === 0) {
-    logger.info('No new posts matched');
-    return;
+    return {
+      candidateCount: candidates.length,
+      freshCount: 0,
+      notifiedPostCount,
+      dryRunPostCount,
+      failedPostCount,
+    };
   }
 
   let anySuccessfulDelivery = false;
@@ -216,6 +232,7 @@ const pollOnce = async (
       logger.debug(
         `DRY-RUN: ${post.title} (matched ${matchedKeywords.join(', ')}) - no webhook call`
       );
+      dryRunPostCount += 1;
       continue;
     }
 
@@ -225,6 +242,7 @@ const pollOnce = async (
     } catch (error: unknown) {
       await store.unclaim(post.id);
       const reason = error instanceof Error ? error.message : String(error);
+      failedPostCount += 1;
       logger.error(
         `Delivery error: ${post.title} (${reason}, claim released for retry)`,
         error
@@ -234,6 +252,7 @@ const pollOnce = async (
 
     if (results.length === 0) {
       await store.unclaim(post.id);
+      failedPostCount += 1;
       logger.error(
         `Skipped notify: ${post.title} (no notifier target active, claim released)`
       );
@@ -249,6 +268,7 @@ const pollOnce = async (
 
     if (okCount === 0) {
       await store.unclaim(post.id);
+      failedPostCount += 1;
       logger.error(
         `Delivery failed: ${post.title} (0 sent${suffix}, claim released for retry)`
       );
@@ -256,6 +276,7 @@ const pollOnce = async (
     }
 
     anySuccessfulDelivery = true;
+    notifiedPostCount += 1;
     logger.info(
       `Notified: ${post.title} (${okCount} sent${suffix})`
     );
@@ -264,6 +285,14 @@ const pollOnce = async (
   if (!useRedisState && anySuccessfulDelivery) {
     await store.save();
   }
+
+  return {
+    candidateCount: candidates.length,
+    freshCount: fresh.length,
+    notifiedPostCount,
+    dryRunPostCount,
+    failedPostCount,
+  };
 };
 
 const main = async (): Promise<void> => {
@@ -386,20 +415,24 @@ const main = async (): Promise<void> => {
         ? Math.max(1, config.startupMaxItemsPerPoll)
         : Math.max(1, config.maxItemsPerPoll);
 
-      logger.info(
-        `Polling (lookback=${recentHoursOverride}h, pages=${maxPagesPerPoll}, items=${maxItemsPerPoll})`
-      );
-
-      await pollOnce(config, store, recentHoursOverride, {
+      const cycleStartedAt = new Date();
+      const cycleResult = await pollOnce(config, store, recentHoursOverride, {
         maxPagesPerPoll,
         maxItemsPerPoll,
       });
       firstRun = false;
 
+      const nextRunAt = config.pollOnce
+        ? 'none'
+        : new Date(cycleStartedAt.getTime() + config.requestIntervalMs).toISOString();
+
+      logger.info(
+        `Monitor cycle run_at=${cycleStartedAt.toISOString()} interval_ms=${config.requestIntervalMs} lookback=${recentHoursOverride}h pages=${maxPagesPerPoll} items=${maxItemsPerPoll} candidates=${cycleResult.candidateCount} fresh=${cycleResult.freshCount} notified=${cycleResult.notifiedPostCount} dry_run=${cycleResult.dryRunPostCount} failed=${cycleResult.failedPostCount} next_run=${nextRunAt}`
+      );
+
       if (config.pollOnce) {
         break;
       }
-      logger.info(`Waiting ${config.requestIntervalMs}ms`);
       await waitUntilNextPollOrShutdown(config.requestIntervalMs, () => shutdownRequested);
     }
   } finally {
