@@ -69,9 +69,11 @@ const formatPostDate = (publishedAt?: string): string => {
 };
 
 const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMatchingPosts>): void => {
-  if (!config.showRecentMatches || config.showRecentHours <= 0 || config.logLevel !== 'debug') {
+  if (!config.showRecentMatches || config.showRecentHours <= 0) {
     return;
   }
+
+  const debugEnabled = config.logLevel === 'debug';
 
   const recent = findRecentMatchedPosts(posts, config.keywords, config.showRecentHours, true);
   const now = new Date();
@@ -136,6 +138,10 @@ const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMat
     tag: 'IN_WINDOW' | 'OUT_OF_WINDOW' | 'UNPARSEABLE',
     items: Array<{ id: string; title: string; link: string; publishedAt?: string }>
   ): void => {
+    if (!debugEnabled) {
+      return;
+    }
+
     for (const post of items) {
       logger.debug('recent match item', {
         event: 'monitor.matches.item',
@@ -166,7 +172,7 @@ const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMat
   const outOfWindowDedup = dedupeById(outOfWindow);
   const parseFailedDedup = dedupeById(parseFailed);
 
-  logger.debug('recent matches summary', {
+  const summaryFields = {
     event: 'monitor.matches.summary',
     boardDate: today,
     keywords: config.keywords,
@@ -176,15 +182,49 @@ const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMat
       outOfWindow: outOfWindowDedup.length,
       unparseable: parseFailedDedup.length,
     },
-  });
+  };
+
+  logger.info('recent matches summary', summaryFields);
+  if (debugEnabled) {
+    logger.debug('recent matches summary', summaryFields);
+  }
 
   if (inWindowDedup.length === 0 && outOfWindowDedup.length === 0 && parseFailedDedup.length === 0) {
-    logger.debug('no keyword matches in parsed candidates', {
+    const emptyFields = {
       event: 'monitor.matches.empty',
       keywords: config.keywords,
       lookbackHours: config.showRecentHours,
-    });
+    };
+    logger.info('no keyword matches in parsed candidates', emptyFields);
+    if (debugEnabled) {
+      logger.debug('no keyword matches in parsed candidates', emptyFields);
+    }
     return;
+  }
+
+  if (outOfWindowDedup.length > 0 || parseFailedDedup.length > 0) {
+    logger.info('matched posts excluded from alert candidates', {
+      event: 'monitor.matches.excluded',
+      lookbackHours: config.showRecentHours,
+      result: {
+        outOfWindow: outOfWindowDedup.length,
+        unparseable: parseFailedDedup.length,
+      },
+      sample: {
+        outOfWindow: outOfWindowDedup.slice(0, 3).map((post) => ({
+          id: post.id,
+          title: post.title,
+          link: post.link,
+          publishedAt: formatPostDate(post.publishedAt),
+        })),
+        unparseable: parseFailedDedup.slice(0, 3).map((post) => ({
+          id: post.id,
+          title: post.title,
+          link: post.link,
+          publishedAt: formatPostDate(post.publishedAt),
+        })),
+      },
+    });
   }
 
   printPosts('IN_WINDOW', inWindowDedup);
@@ -201,6 +241,8 @@ type PollCycleResult = {
   notifiedPostCount: number;
   dryRunPostCount: number;
   failedPostCount: number;
+  skippedAlreadyProcessedCount: number;
+  stateCheckFailedCount: number;
 };
 
 const pollOnce = async (
@@ -212,6 +254,19 @@ const pollOnce = async (
     maxItemsPerPoll: number;
   }
 ): Promise<PollCycleResult> => {
+  const safeUnclaim = async (postId: string): Promise<void> => {
+    try {
+      await store.unclaim(postId);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      logger.error('state release failed after delivery error', error, {
+        event: 'stateStore.claim.releaseFailed',
+        reason,
+        post: { id: postId },
+      });
+    }
+  };
+
   const fetchConfig = fetchOverrides
     ? {
         ...config,
@@ -236,18 +291,75 @@ const pollOnce = async (
   let notifiedPostCount = 0;
   let dryRunPostCount = 0;
   let failedPostCount = 0;
+  let skippedAlreadyProcessedCount = 0;
+  let stateCheckFailedCount = 0;
+  const skippedAlreadyProcessedSamples: Array<{ id: string; title: string; link: string }> = [];
 
   for (const post of candidates) {
-    if (isDryRun && useRedisState) {
-      if (!(await store.has(post.id))) {
-        fresh.push(post);
+    try {
+      if (isDryRun && useRedisState) {
+        if (!(await store.has(post.id))) {
+          fresh.push(post);
+        } else {
+          skippedAlreadyProcessedCount += 1;
+          if (skippedAlreadyProcessedSamples.length < 3) {
+            skippedAlreadyProcessedSamples.push({
+              id: post.id,
+              title: post.title,
+              link: post.link,
+            });
+          }
+        }
+        continue;
       }
-      continue;
-    }
 
-    if (await store.claim(post.id)) {
+      if (await store.claim(post.id)) {
+        fresh.push(post);
+      } else {
+        skippedAlreadyProcessedCount += 1;
+        if (skippedAlreadyProcessedSamples.length < 3) {
+          skippedAlreadyProcessedSamples.push({
+            id: post.id,
+            title: post.title,
+            link: post.link,
+          });
+        }
+      }
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      stateCheckFailedCount += 1;
+      logger.error('state store claim/has failed; allowing delivery attempt', error, {
+        event: 'stateStore.claim.failed',
+        reason,
+        failOpen: true,
+        post: {
+          id: post.id,
+          title: post.title,
+          link: post.link,
+        },
+      });
       fresh.push(post);
     }
+  }
+
+  if (skippedAlreadyProcessedCount > 0 || stateCheckFailedCount > 0) {
+    logger.info('candidate dedupe/state decision summary', {
+      event: 'monitor.cycle.stateDecision',
+      options: {
+        lookbackHours: effectiveLookbackHours,
+        dryRun: isDryRun,
+        useRedisState,
+      },
+      result: {
+        candidates: candidates.length,
+        fresh: fresh.length,
+        skippedAlreadyProcessed: skippedAlreadyProcessedCount,
+        stateCheckFailed: stateCheckFailedCount,
+      },
+      sample: {
+        alreadyProcessed: skippedAlreadyProcessedSamples,
+      },
+    });
   }
 
   if (fresh.length === 0) {
@@ -257,6 +369,8 @@ const pollOnce = async (
       notifiedPostCount,
       dryRunPostCount,
       failedPostCount,
+      skippedAlreadyProcessedCount,
+      stateCheckFailedCount,
     };
   }
 
@@ -282,7 +396,7 @@ const pollOnce = async (
     try {
       results = await sendAlerts(config, post.title, post.link, matchedKeywords);
     } catch (error: unknown) {
-      await store.unclaim(post.id);
+      await safeUnclaim(post.id);
       const reason = error instanceof Error ? error.message : String(error);
       failedPostCount += 1;
       logger.error('delivery request error', error, {
@@ -300,7 +414,7 @@ const pollOnce = async (
     }
 
     if (results.length === 0) {
-      await store.unclaim(post.id);
+      await safeUnclaim(post.id);
       failedPostCount += 1;
       logger.error('delivery skipped no active notifier target', undefined, {
         event: 'delivery.skipped',
@@ -323,7 +437,7 @@ const pollOnce = async (
         : '';
 
     if (okCount === 0) {
-      await store.unclaim(post.id);
+      await safeUnclaim(post.id);
       failedPostCount += 1;
       logger.error('delivery failed all notifier targets', undefined, {
         event: 'delivery.failed',
@@ -370,6 +484,8 @@ const pollOnce = async (
     notifiedPostCount,
     dryRunPostCount,
     failedPostCount,
+    skippedAlreadyProcessedCount,
+    stateCheckFailedCount,
   };
 };
 
@@ -560,6 +676,8 @@ const main = async (): Promise<void> => {
           notified: cycleResult.notifiedPostCount,
           dryRun: cycleResult.dryRunPostCount,
           failed: cycleResult.failedPostCount,
+          skippedAlreadyProcessed: cycleResult.skippedAlreadyProcessedCount,
+          stateCheckFailed: cycleResult.stateCheckFailedCount,
         },
         options: {
           intervalMs: config.requestIntervalMs,
