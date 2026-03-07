@@ -719,10 +719,6 @@ export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]
           result.push(...newPosts);
           attempts.push(`${requestSummary} parsed ${newPosts.length} new posts`);
 
-          if (result.length >= config.maxItemsPerPoll) {
-            return result.slice(0, config.maxItemsPerPoll).filter((item) => item.title.length > 0);
-          }
-
           break;
         }
 
@@ -742,7 +738,7 @@ export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]
       }
 
       if (result.length > 0) {
-        return result.slice(0, config.maxItemsPerPoll).filter((item) => item.title.length > 0);
+        return result.filter((item) => item.title.length > 0);
       }
     }
   }
