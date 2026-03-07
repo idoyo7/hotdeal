@@ -101,6 +101,8 @@ export class LeaderElector {
 
   private renewLoop?: Promise<void>;
 
+  private wakeRenewLoop?: () => void;
+
   private leader = false;
 
   private observedLeader = '';
@@ -131,12 +133,16 @@ export class LeaderElector {
     return this.leader;
   }
 
-  async waitForLeadership(): Promise<void> {
+  async waitForLeadership(shouldStop: () => boolean = () => false): Promise<void> {
     if (!this.enabled) {
       return;
     }
 
     while (!this.stopped && !this.leader) {
+      if (shouldStop()) {
+        return;
+      }
+
       await this.tryAcquireOrRenew();
       if (this.leader) {
         return;
@@ -145,16 +151,42 @@ export class LeaderElector {
     }
   }
 
-  async close(): Promise<void> {
+  async close(options?: { releaseLease?: boolean }): Promise<void> {
     this.stopped = true;
+
+    if (this.wakeRenewLoop) {
+      this.wakeRenewLoop();
+    }
+
     if (this.renewLoop) {
       await this.renewLoop;
+    }
+
+    if (options?.releaseLease && this.enabled) {
+      try {
+        await this.releaseLease();
+      } catch (error: unknown) {
+        const reason = error instanceof Error ? error.message : String(error);
+        logger.error(`Leader election close failed while releasing lease (${reason})`, error);
+      }
     }
   }
 
   private async startRenewLoop(): Promise<void> {
     while (!this.stopped) {
-      await wait(this.renewIntervalMs);
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          this.wakeRenewLoop = undefined;
+          resolve();
+        }, this.renewIntervalMs);
+
+        this.wakeRenewLoop = () => {
+          clearTimeout(timer);
+          this.wakeRenewLoop = undefined;
+          resolve();
+        };
+      });
+
       if (this.stopped) {
         return;
       }
@@ -164,7 +196,7 @@ export class LeaderElector {
       } catch (error: unknown) {
         const reason = error instanceof Error ? error.message : String(error);
         this.setLeaderState(false, this.observedLeader || 'unknown');
-        logger.error(`[${new Date().toISOString()}] Leader election renew failed (${reason})`);
+        logger.error(`Leader election renew failed (${reason})`, error);
       }
     }
   }
@@ -304,24 +336,71 @@ export class LeaderElector {
     return false;
   }
 
+  private async releaseLease(): Promise<void> {
+    if (!this.api) {
+      return;
+    }
+
+    let currentLease: V1Lease;
+    try {
+      currentLease = await this.api.read<V1Lease>(this.leaseHeader());
+    } catch (error: unknown) {
+      const statusCode = toStatusCode(error);
+      if (statusCode === 404) {
+        return;
+      }
+      throw error;
+    }
+
+    if (currentLease.spec?.holderIdentity !== this.identity) {
+      return;
+    }
+
+    const nowMicro = toMicroTime(new Date());
+    const replacement: V1Lease = {
+      ...currentLease,
+      apiVersion: 'coordination.k8s.io/v1',
+      kind: 'Lease',
+      metadata: {
+        ...currentLease.metadata,
+        name: this.leaseName,
+        namespace: this.namespace,
+      },
+      spec: {
+        ...currentLease.spec,
+        holderIdentity: '',
+        renewTime: nowMicro,
+      },
+    };
+
+    try {
+      await this.api.replace(replacement);
+      this.setLeaderState(false, 'none');
+      logger.info(`Leader election lease released (lease=${this.namespace}/${this.leaseName})`);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      logger.error(`Leader election lease release failed (${reason})`, error);
+    }
+  }
+
   private setLeaderState(isLeader: boolean, holderIdentity: string): void {
     const holder = holderIdentity || 'none';
 
     if (isLeader && !this.leader) {
       logger.info(
-        `[${new Date().toISOString()}] Leader election acquired (identity=${this.identity}, lease=${this.namespace}/${this.leaseName})`
+        `Leader election acquired (identity=${this.identity}, lease=${this.namespace}/${this.leaseName})`
       );
     }
 
     if (!isLeader && this.leader) {
       logger.info(
-        `[${new Date().toISOString()}] Leader election lost (current leader=${holder})`
+        `Leader election lost (current leader=${holder})`
       );
     }
 
     if (!isLeader && this.observedLeader !== holder) {
       logger.info(
-        `[${new Date().toISOString()}] Leader election standby (current leader=${holder})`
+        `Leader election standby (current leader=${holder})`
       );
       this.observedLeader = holder;
     }

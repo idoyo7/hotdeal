@@ -4,10 +4,14 @@ loadEnv();
 
 export type LogLevel = 'debug' | 'info' | 'error';
 
+export type NotifierTarget = 'slack' | 'telegram' | 'discord';
+
 export type NotifierConfig = {
   slackWebhookUrl?: string;
   telegramBotToken?: string;
   telegramChatId?: string;
+  discordWebhookUrl?: string;
+  targets?: NotifierTarget[];
   dryRun?: boolean;
 };
 
@@ -114,6 +118,28 @@ const splitList = (value: string | undefined): string[] => {
     .filter(Boolean);
 };
 
+const toNotifierTargets = (value: string | undefined): NotifierTarget[] => {
+  const parsed = splitList(value).map((item) => item.toLowerCase());
+  const seen = new Set<NotifierTarget>();
+  const result: NotifierTarget[] = [];
+
+  for (const item of parsed) {
+    if (item !== 'slack' && item !== 'telegram' && item !== 'discord') {
+      continue;
+    }
+
+    const target = item as NotifierTarget;
+    if (seen.has(target)) {
+      continue;
+    }
+
+    seen.add(target);
+    result.push(target);
+  }
+
+  return result;
+};
+
 const dedupeUrls = (items: string[]): string[] => {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -170,6 +196,7 @@ export const getConfig = () => {
   const postSelector = getEnv('POST_SELECTOR');
   const linkSelector = getEnv('LINK_SELECTOR');
   const titleSelector = getEnv('TITLE_SELECTOR');
+  const notifierTargets = toNotifierTargets(getEnv('NOTIFIER_TARGETS'));
 
   const keywords = splitKeywords(getEnv('ALERT_KEYWORDS')).filter(Boolean);
 
@@ -177,6 +204,8 @@ export const getConfig = () => {
     slackWebhookUrl: getEnv('SLACK_WEBHOOK_URL'),
     telegramBotToken: getEnv('TELEGRAM_BOT_TOKEN'),
     telegramChatId: getEnv('TELEGRAM_CHAT_ID'),
+    discordWebhookUrl: getEnv('DISCORD_WEBHOOK_URL'),
+    targets: notifierTargets,
     dryRun: toBoolean(getEnv('DRY_RUN'), false),
   };
 
