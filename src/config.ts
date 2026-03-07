@@ -2,6 +2,8 @@ import { config as loadEnv } from 'dotenv';
 
 loadEnv();
 
+export type LogLevel = 'debug' | 'info' | 'error';
+
 export type NotifierConfig = {
   slackWebhookUrl?: string;
   telegramBotToken?: string;
@@ -17,12 +19,21 @@ export type MonitoringConfig = {
   requestTimeoutMs: number;
   maxPagesPerPoll: number;
   maxItemsPerPoll: number;
+  startupMaxPagesPerPoll: number;
+  startupMaxItemsPerPoll: number;
   seenStateFile: string;
   useFileState: boolean;
   useRedisState: boolean;
   redisUrl?: string;
   redisKeyPrefix: string;
   redisTtlSeconds: number;
+  leaderElectionEnabled: boolean;
+  leaderElectionLeaseName: string;
+  leaderElectionNamespace: string;
+  leaderElectionIdentity: string;
+  leaderElectionLeaseDurationSeconds: number;
+  leaderElectionRenewIntervalMs: number;
+  logLevel: LogLevel;
   keywords: string[];
   pollOnce: boolean;
   lookbackHours: number;
@@ -73,6 +84,15 @@ const toCrawlMode = (value: string | undefined): 'http' | 'playwright' | 'auto' 
   return 'playwright';
 };
 
+const toLogLevel = (value: string | undefined): LogLevel => {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === 'debug' || normalized === 'info' || normalized === 'error') {
+    return normalized;
+  }
+
+  return 'info';
+};
+
 const splitKeywords = (value: string | undefined): string[] => {
   if (!value) {
     return [];
@@ -113,20 +133,31 @@ export const getConfig = () => {
   const fallbackBoardUrls = splitList(getEnv('FMKOREA_BOARD_URLS'));
   const boardUrls = dedupeUrls([boardUrl, ...fallbackBoardUrls]);
 
-  const requestIntervalMs = toInt(getEnv('REQUEST_INTERVAL_MS'), 5 * 60 * 1000);
+  const requestIntervalMs = toInt(getEnv('REQUEST_INTERVAL_MS'), 3 * 60 * 1000);
   const requestTimeoutMs = toInt(getEnv('REQUEST_TIMEOUT_MS'), 20_000);
   const crawlMode = toCrawlMode(getEnv('CRAWL_MODE'));
-  const maxPagesPerPoll = toInt(getEnv('MAX_PAGES_PER_POLL'), 3);
-  const maxItemsPerPoll = toInt(getEnv('MAX_ITEMS_PER_POLL'), 25);
+  const maxPagesPerPoll = toInt(getEnv('MAX_PAGES_PER_POLL'), 1);
+  const maxItemsPerPoll = toInt(getEnv('MAX_ITEMS_PER_POLL'), 30);
+  const startupMaxPagesPerPoll = toInt(getEnv('STARTUP_MAX_PAGES_PER_POLL'), maxPagesPerPoll);
+  const startupMaxItemsPerPoll = toInt(getEnv('STARTUP_MAX_ITEMS_PER_POLL'), maxItemsPerPoll);
   const seenStateFile = getEnv('STATE_FILE_PATH') || '';
   const useFileState = toBoolean(getEnv('USE_FILE_STATE'), seenStateFile.length > 0);
   const useRedisState = toBoolean(getEnv('USE_REDIS_STATE'), false);
   const redisUrl = getEnv('REDIS_URL');
   const redisKeyPrefix = getEnv('REDIS_KEY_PREFIX') || 'hotdeal:seen:';
-  const redisTtlSeconds = toInt(getEnv('REDIS_TTL_SECONDS'), 0);
+  const redisTtlSeconds = toInt(getEnv('REDIS_TTL_SECONDS'), 604_800);
+  const leaderElectionEnabled = toBoolean(getEnv('LEADER_ELECTION_ENABLED'), false);
+  const leaderElectionLeaseName = getEnv('LEADER_ELECTION_LEASE_NAME') || 'fmkorea-hotdeal-monitor';
+  const leaderElectionNamespace =
+    getEnv('LEADER_ELECTION_NAMESPACE') || getEnv('POD_NAMESPACE') || 'default';
+  const leaderElectionIdentity =
+    getEnv('LEADER_ELECTION_IDENTITY') || getEnv('POD_NAME') || `monitor-${process.pid}`;
+  const leaderElectionLeaseDurationSeconds = toInt(getEnv('LEADER_ELECTION_LEASE_DURATION_SECONDS'), 30);
+  const leaderElectionRenewIntervalMs = toInt(getEnv('LEADER_ELECTION_RENEW_INTERVAL_MS'), 10_000);
+  const logLevel = toLogLevel(getEnv('LOG_LEVEL'));
   const showRecentMatches = toBoolean(getEnv('SHOW_RECENT_MATCHES'), true);
-  const lookbackHours = toInt(getEnv('LOOKBACK_HOURS'), 168);
-  const startupLookbackHours = toInt(getEnv('STARTUP_LOOKBACK_HOURS'), 24);
+  const lookbackHours = toInt(getEnv('LOOKBACK_HOURS'), 3);
+  const startupLookbackHours = toInt(getEnv('STARTUP_LOOKBACK_HOURS'), 168);
   const pollOnce = getEnv('RUN_ONCE') === 'true';
   const userAgent =
     getEnv('USER_AGENT') ||
@@ -157,12 +188,21 @@ export const getConfig = () => {
     requestTimeoutMs,
     maxPagesPerPoll,
     maxItemsPerPoll,
+    startupMaxPagesPerPoll,
+    startupMaxItemsPerPoll,
     seenStateFile,
     useFileState,
     useRedisState,
     redisUrl,
     redisKeyPrefix,
     redisTtlSeconds,
+    leaderElectionEnabled,
+    leaderElectionLeaseName,
+    leaderElectionNamespace,
+    leaderElectionIdentity,
+    leaderElectionLeaseDurationSeconds,
+    leaderElectionRenewIntervalMs,
+    logLevel,
     lookbackHours,
     startupLookbackHours,
     showRecentMatches,

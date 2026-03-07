@@ -7,6 +7,8 @@ import {
 import { getConfig, AppConfig } from './config.js';
 import { StateStore } from './stateStore.js';
 import { sendAlerts, type DeliveryResult } from './notifier.js';
+import { LeaderElector } from './leaderElection.js';
+import { logger, setLogLevel } from './logger.js';
 
 const wait = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -30,7 +32,7 @@ const formatPostDate = (publishedAt?: string): string => {
 };
 
 const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMatchingPosts>): void => {
-  if (!config.showRecentMatches || config.showRecentHours <= 0) {
+  if (!config.showRecentMatches || config.showRecentHours <= 0 || config.logLevel !== 'debug') {
     return;
   }
 
@@ -102,9 +104,9 @@ const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMat
       return;
     }
 
-    console.log(`[${new Date().toISOString()}] ${label}`);
+    logger.debug(`[${new Date().toISOString()}] ${label}`);
     for (const post of items) {
-      console.log(`- [${tag}] [${formatPostDate(post.publishedAt)}] ${post.title} -> ${post.link}`);
+      logger.debug(`- [${tag}] [${formatPostDate(post.publishedAt)}] ${post.title} -> ${post.link}`);
     }
   };
 
@@ -124,12 +126,12 @@ const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMat
   const outOfWindowDedup = dedupeById(outOfWindow);
   const parseFailedDedup = dedupeById(parseFailed);
 
-  console.log(
+  logger.debug(
     `[${new Date().toISOString()}] Daily keyword summary for board (${today}), keyword(s): ${config.keywords.join(', ')} with lookback ${config.showRecentHours}h`
   );
 
   if (inWindowDedup.length === 0 && outOfWindowDedup.length === 0 && parseFailedDedup.length === 0) {
-    console.log(`[${new Date().toISOString()}] No keyword-matched posts found in parsed candidates.`);
+    logger.debug(`[${new Date().toISOString()}] No keyword-matched posts found in parsed candidates.`);
     return;
   }
 
@@ -144,15 +146,30 @@ const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMat
 const pollOnce = async (
   config: AppConfig,
   store: StateStore,
-  recentHoursOverride?: number
+  recentHoursOverride?: number,
+  fetchOverrides?: {
+    maxPagesPerPoll: number;
+    maxItemsPerPoll: number;
+  }
 ): Promise<void> => {
-  const posts = await fetchLatestPosts(config);
-  const reportConfig = recentHoursOverride !== undefined
-    ? { ...config, showRecentHours: recentHoursOverride }
+  const fetchConfig = fetchOverrides
+    ? {
+        ...config,
+        maxPagesPerPoll: fetchOverrides.maxPagesPerPoll,
+        maxItemsPerPoll: fetchOverrides.maxItemsPerPoll,
+      }
     : config;
+
+  const posts = await fetchLatestPosts(fetchConfig);
+  const reportConfig = recentHoursOverride !== undefined
+    ? { ...fetchConfig, showRecentHours: recentHoursOverride }
+    : fetchConfig;
   reportRecentMatches(reportConfig, posts);
 
-  const candidates = config.keywords.length > 0 ? findMatchingPosts(posts, config.keywords) : posts;
+  const effectiveLookbackHours = Math.max(1, recentHoursOverride ?? config.lookbackHours);
+  const candidates = config.keywords.length > 0
+    ? findRecentMatchedPosts(posts, config.keywords, effectiveLookbackHours, false)
+    : findRecentMatchedPosts(posts, [''], effectiveLookbackHours, false);
   const fresh: typeof candidates = [];
   const isDryRun = config.notifier.dryRun;
   const useRedisState = store.isRedisEnabled();
@@ -171,7 +188,7 @@ const pollOnce = async (
   }
 
   if (fresh.length === 0) {
-    console.log(`[${new Date().toISOString()}] No new posts matched`);
+    logger.info(`[${new Date().toISOString()}] No new posts matched`);
     return;
   }
 
@@ -180,7 +197,7 @@ const pollOnce = async (
     const matchedKeywords = config.keywords.length > 0 ? findMatches(post.title, config.keywords) : ['*'];
 
     if (isDryRun) {
-      console.log(
+      logger.debug(
         `[${new Date().toISOString()}] DRY-RUN: ${post.title} (matched ${matchedKeywords.join(', ')}) - no webhook call`
       );
       continue;
@@ -192,7 +209,7 @@ const pollOnce = async (
     } catch (error: unknown) {
       await store.unclaim(post.id);
       const reason = error instanceof Error ? error.message : String(error);
-      console.warn(
+      logger.error(
         `[${new Date().toISOString()}] Delivery error: ${post.title} (${reason}, claim released for retry)`
       );
       continue;
@@ -200,7 +217,7 @@ const pollOnce = async (
 
     if (results.length === 0) {
       await store.unclaim(post.id);
-      console.warn(
+      logger.error(
         `[${new Date().toISOString()}] Skipped notify: ${post.title} (no notifier target active, claim released)`
       );
       continue;
@@ -215,14 +232,14 @@ const pollOnce = async (
 
     if (okCount === 0) {
       await store.unclaim(post.id);
-      console.warn(
+      logger.error(
         `[${new Date().toISOString()}] Delivery failed: ${post.title} (0 sent${suffix}, claim released for retry)`
       );
       continue;
     }
 
     anySuccessfulDelivery = true;
-    console.log(
+    logger.info(
       `[${new Date().toISOString()}] Notified: ${post.title} (${okCount} sent${suffix})`
     );
   }
@@ -234,6 +251,18 @@ const pollOnce = async (
 
 const main = async (): Promise<void> => {
   const config = getConfig();
+  setLogLevel(config.logLevel);
+  const leaderElector = new LeaderElector({
+    enabled: config.leaderElectionEnabled,
+    leaseName: config.leaderElectionLeaseName,
+    namespace: config.leaderElectionNamespace,
+    identity: config.leaderElectionIdentity,
+    leaseDurationSeconds: config.leaderElectionLeaseDurationSeconds,
+    renewIntervalMs: config.leaderElectionRenewIntervalMs,
+  });
+
+  await leaderElector.start();
+
   const statePath = config.useFileState && !config.useRedisState ? config.seenStateFile : '';
   const store = new StateStore(statePath, {
     enabled: config.useRedisState,
@@ -246,43 +275,69 @@ const main = async (): Promise<void> => {
   if (config.notifier.slackWebhookUrl === undefined &&
       (config.notifier.telegramBotToken === undefined || config.notifier.telegramChatId === undefined) &&
       !config.notifier.dryRun) {
-    console.error('No notifier configured. Set SLACK_WEBHOOK_URL or TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID.');
+    logger.error('No notifier configured. Set SLACK_WEBHOOK_URL or TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID.');
     process.exit(1);
   }
 
   if (store.isRedisEnabled()) {
-    console.log(`[${new Date().toISOString()}] Using Redis-based state. prefix=${store.redisPrefix()}`);
+    logger.info(`[${new Date().toISOString()}] Using Redis-based state. prefix=${store.redisPrefix()}`);
   } else if (config.useFileState) {
-    console.log(`[${new Date().toISOString()}] Using file-based state: ${config.seenStateFile}`);
+    logger.info(`[${new Date().toISOString()}] Using file-based state: ${config.seenStateFile}`);
   } else {
-    console.log(`[${new Date().toISOString()}] Using in-memory state. State is reset when pod restarts.`);
+    logger.info(`[${new Date().toISOString()}] Using in-memory state. State is reset when pod restarts.`);
   }
 
   if (config.keywords.length === 0) {
-    console.warn('No ALERT_KEYWORDS configured. All posts will be notified.');
+    logger.info('No ALERT_KEYWORDS configured. All posts will be notified.');
+  }
+
+  if (config.leaderElectionEnabled) {
+    logger.info(
+      `[${new Date().toISOString()}] Leader election enabled. lease=${config.leaderElectionNamespace}/${config.leaderElectionLeaseName}, identity=${config.leaderElectionIdentity}`
+    );
   }
 
   let firstRun = true;
   try {
     while (true) {
-      const recentHoursOverride = !config.pollOnce && firstRun
+      if (config.leaderElectionEnabled) {
+        await leaderElector.waitForLeadership();
+      }
+
+      const recentHoursOverride = firstRun
         ? Math.max(1, config.startupLookbackHours)
-        : config.showRecentHours;
-      await pollOnce(config, store, recentHoursOverride);
+        : Math.max(1, config.lookbackHours);
+
+      const maxPagesPerPoll = firstRun
+        ? Math.max(1, config.startupMaxPagesPerPoll)
+        : Math.max(1, config.maxPagesPerPoll);
+      const maxItemsPerPoll = firstRun
+        ? Math.max(1, config.startupMaxItemsPerPoll)
+        : Math.max(1, config.maxItemsPerPoll);
+
+      logger.info(
+        `[${new Date().toISOString()}] Polling (lookback=${recentHoursOverride}h, pages=${maxPagesPerPoll}, items=${maxItemsPerPoll})`
+      );
+
+      await pollOnce(config, store, recentHoursOverride, {
+        maxPagesPerPoll,
+        maxItemsPerPoll,
+      });
       firstRun = false;
 
       if (config.pollOnce) {
         break;
       }
-      console.log(`[${new Date().toISOString()}] Waiting ${config.requestIntervalMs}ms`);
+      logger.info(`[${new Date().toISOString()}] Waiting ${config.requestIntervalMs}ms`);
       await wait(config.requestIntervalMs);
     }
   } finally {
+    await leaderElector.close();
     await store.close();
   }
 };
 
 main().catch((error) => {
-  console.error('Monitor failed', error);
+  logger.error('Monitor failed', error);
   process.exit(1);
 });

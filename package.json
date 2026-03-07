@@ -20,6 +20,7 @@
     "test": "npm run build && node --test tests/*.js"
   },
   "dependencies": {
+    "@kubernetes/client-node": "^1.4.0",
     "cheerio": "^1.0.0",
     "dotenv": "^16.4.5",
     "playwright": "^1.58.2",

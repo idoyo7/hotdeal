@@ -5,7 +5,7 @@ metadata:
   labels:
     app: fmkorea-hotdeal-monitor
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: fmkorea-hotdeal-monitor
@@ -14,6 +14,7 @@ spec:
       labels:
         app: fmkorea-hotdeal-monitor
     spec:
+      serviceAccountName: fmkorea-hotdeal-monitor
       volumes:
         - name: shm
           emptyDir:
@@ -22,7 +23,7 @@ spec:
       containers:
         - name: monitor
           image: docker.io/montkim9/fmkorea-hotdeal-monitor:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: fmkorea-hotdeal-monitor-config
@@ -37,6 +38,14 @@ spec:
             - name: shm
               mountPath: /dev/shm
           env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: SLACK_WEBHOOK_URL
               valueFrom:
                 secretKeyRef:

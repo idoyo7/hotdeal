@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { createClient, type RedisClientType } from 'redis';
+import { logger } from './logger.js';
 
 type RedisStateOptions = {
   enabled: boolean;
@@ -34,7 +35,7 @@ export class StateStore {
 
       this.redis = createClient({ url: redisOptions.url });
       this.redis.on('error', (error: unknown) => {
-        console.error(`[${new Date().toISOString()}] Redis client error`, error);
+        logger.error(`[${new Date().toISOString()}] Redis client error`, error);
       });
     }
   }

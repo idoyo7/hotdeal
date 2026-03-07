@@ -14,6 +14,7 @@ spec:
       labels:
         app: fmkorea-hotdeal-monitor
     spec:
+      serviceAccountName: fmkorea-hotdeal-monitor
       volumes:
         - name: shm
           emptyDir:
@@ -25,7 +26,7 @@ spec:
       containers:
         - name: monitor
           image: docker.io/montkim9/fmkorea-hotdeal-monitor:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: fmkorea-hotdeal-monitor-config
@@ -37,6 +38,14 @@ spec:
               cpu: "1000m"
               memory: "1Gi"
           env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: USE_FILE_STATE
               value: "true"
             - name: USE_REDIS_STATE
