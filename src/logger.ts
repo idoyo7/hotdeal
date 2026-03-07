@@ -10,10 +10,44 @@ let currentLevel: LogLevel = 'info';
 
 const shouldLog = (level: LogLevel): boolean => priorities[level] >= priorities[currentLevel];
 
-const formatLog = (level: LogLevel, message: string): string => {
-  const levelLabel = level.toUpperCase();
-  const timestamp = new Date().toISOString();
-  return `[${levelLabel}] [${timestamp}] ${message}`;
+type LogFields = Record<string, unknown>;
+
+const toSerializableError = (error: unknown): unknown => {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return error;
+};
+
+const formatLog = (
+  level: LogLevel,
+  message: string,
+  fields?: LogFields,
+  error?: unknown
+): string => {
+  const payload: Record<string, unknown> = {
+    level,
+    time: new Date().toISOString(),
+  };
+
+  if (fields) {
+    for (const [key, value] of Object.entries(fields)) {
+      payload[key] = value;
+    }
+  }
+
+  payload.message = message;
+
+  if (error !== undefined) {
+    payload.error = toSerializableError(error);
+  }
+
+  return JSON.stringify(payload);
 };
 
 export const setLogLevel = (level: LogLevel): void => {
@@ -21,28 +55,22 @@ export const setLogLevel = (level: LogLevel): void => {
 };
 
 export const logger = {
-  debug(message: string): void {
+  debug(message: string, fields?: LogFields): void {
     if (!shouldLog('debug')) {
       return;
     }
-    console.log(formatLog('debug', message));
+    console.log(formatLog('debug', message, fields));
   },
-  info(message: string): void {
+  info(message: string, fields?: LogFields): void {
     if (!shouldLog('info')) {
       return;
     }
-    console.log(formatLog('info', message));
+    console.log(formatLog('info', message, fields));
   },
-  error(message: string, error?: unknown): void {
+  error(message: string, error?: unknown, fields?: LogFields): void {
     if (!shouldLog('error')) {
       return;
     }
-
-    if (error === undefined) {
-      console.error(formatLog('error', message));
-      return;
-    }
-
-    console.error(formatLog('error', message), error);
+    console.error(formatLog('error', message, fields, error));
   },
 };

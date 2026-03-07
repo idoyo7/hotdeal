@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { logger, setLogLevel } from '../dist/logger.js';
 
-test('logger prints level and timestamp prefix', () => {
+test('logger prints structured JSON payload', () => {
   setLogLevel('debug');
   const captured = [];
   const originalLog = console.log;
@@ -19,7 +19,37 @@ test('logger prints level and timestamp prefix', () => {
   }
 
   assert.strictEqual(captured.length, 1);
-  assert.match(captured[0], /^\[INFO\] \[\d{4}-\d{2}-\d{2}T.*Z\] hello world$/);
+  const parsed = JSON.parse(captured[0]);
+  assert.strictEqual(parsed.level, 'info');
+  assert.strictEqual(parsed.message, 'hello world');
+  assert.match(parsed.time, /^\d{4}-\d{2}-\d{2}T.*Z$/);
+});
+
+test('logger includes custom fields in JSON payload', () => {
+  setLogLevel('debug');
+  const captured = [];
+  const originalLog = console.log;
+
+  console.log = (...args) => {
+    captured.push(args.join(' '));
+  };
+
+  try {
+    logger.info('monitor cycle run', {
+      event: 'monitor.cycle.completed',
+      result: { candidates: 10, fresh: 2 },
+      options: { lookbackHours: 3 },
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.strictEqual(captured.length, 1);
+  const parsed = JSON.parse(captured[0]);
+  assert.strictEqual(parsed.event, 'monitor.cycle.completed');
+  assert.deepStrictEqual(parsed.result, { candidates: 10, fresh: 2 });
+  assert.deepStrictEqual(parsed.options, { lookbackHours: 3 });
+  assert.strictEqual(parsed.message, 'monitor cycle run');
 });
 
 test('logger respects configured log level', () => {

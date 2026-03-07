@@ -426,9 +426,27 @@ const main = async (): Promise<void> => {
         ? 'none'
         : new Date(cycleStartedAt.getTime() + config.requestIntervalMs).toISOString();
 
-      logger.info(
-        `Monitor cycle run_at=${cycleStartedAt.toISOString()} interval_ms=${config.requestIntervalMs} lookback=${recentHoursOverride}h pages=${maxPagesPerPoll} items=${maxItemsPerPoll} candidates=${cycleResult.candidateCount} fresh=${cycleResult.freshCount} notified=${cycleResult.notifiedPostCount} dry_run=${cycleResult.dryRunPostCount} failed=${cycleResult.failedPostCount} next_run=${nextRunAt}`
-      );
+      logger.info('monitor cycle run', {
+        event: 'monitor.cycle.completed',
+        result: {
+          candidates: cycleResult.candidateCount,
+          fresh: cycleResult.freshCount,
+          notified: cycleResult.notifiedPostCount,
+          dryRun: cycleResult.dryRunPostCount,
+          failed: cycleResult.failedPostCount,
+        },
+        options: {
+          intervalMs: config.requestIntervalMs,
+          lookbackHours: recentHoursOverride,
+          maxPagesPerPoll,
+          maxItemsPerPoll,
+          pollOnce: config.pollOnce,
+        },
+        schedule: {
+          runAt: cycleStartedAt.toISOString(),
+          nextRunAt,
+        },
+      });
 
       if (config.pollOnce) {
         break;
