@@ -185,9 +185,6 @@ const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMat
   };
 
   logger.info('recent matches summary', summaryFields);
-  if (debugEnabled) {
-    logger.debug('recent matches summary', summaryFields);
-  }
 
   if (inWindowDedup.length === 0 && outOfWindowDedup.length === 0 && parseFailedDedup.length === 0) {
     const emptyFields = {
@@ -196,9 +193,6 @@ const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMat
       lookbackHours: config.showRecentHours,
     };
     logger.info('no keyword matches in parsed candidates', emptyFields);
-    if (debugEnabled) {
-      logger.debug('no keyword matches in parsed candidates', emptyFields);
-    }
     return;
   }
 
