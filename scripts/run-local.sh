@@ -12,15 +12,13 @@ fi
 export RUN_ONCE="${RUN_ONCE:-true}"
 export DRY_RUN="${DRY_RUN:-true}"
 export USE_FILE_STATE="${USE_FILE_STATE:-false}"
-export SHOW_RECENT_MATCHES="${SHOW_RECENT_MATCHES:-true}"
-export LOOKBACK_HOURS="${LOOKBACK_HOURS:-168}"
 export REQUEST_INTERVAL_MS="${REQUEST_INTERVAL_MS:-300000}"
 export ALERT_KEYWORDS="${ALERT_KEYWORDS:-삼다수,요기요}"
 export CRAWL_MODE="${CRAWL_MODE:-playwright}"
 export FMKOREA_BOARD_URL="${FMKOREA_BOARD_URL:-https://m.fmkorea.com/hotdeal}"
 export FMKOREA_BOARD_URLS="${FMKOREA_BOARD_URLS:-https://www.fmkorea.com/hotdeal}"
 
-echo "[local] RUN_ONCE=$RUN_ONCE DRY_RUN=$DRY_RUN LOOKBACK_HOURS=$LOOKBACK_HOURS CRAWL_MODE=$CRAWL_MODE"
+echo "[local] RUN_ONCE=$RUN_ONCE DRY_RUN=$DRY_RUN CRAWL_MODE=$CRAWL_MODE STARTUP_PAGES=5 RECURRING_PAGES=1"
 
 if [ "${CRAWL_MODE}" = "playwright" ] || [ "${CRAWL_MODE}" = "auto" ]; then
   if [ "${SKIP_PLAYWRIGHT_INSTALL:-false}" != "true" ]; then

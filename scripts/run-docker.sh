@@ -20,8 +20,6 @@ docker run --rm \
   --env-file .env \
   -e DRY_RUN="${DRY_RUN:-true}" \
   -e RUN_ONCE="${RUN_ONCE:-true}" \
-  -e SHOW_RECENT_MATCHES="${SHOW_RECENT_MATCHES:-true}" \
-  -e LOOKBACK_HOURS="${LOOKBACK_HOURS:-168}" \
   -e USE_FILE_STATE="${USE_FILE_STATE:-false}" \
   -e CRAWL_MODE="${CRAWL_MODE:-playwright}" \
   -e FMKOREA_BOARD_URL="${FMKOREA_BOARD_URL:-https://m.fmkorea.com/hotdeal}" \

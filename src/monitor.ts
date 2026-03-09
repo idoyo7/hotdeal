@@ -17,6 +17,7 @@ const normalizeKeywordText = (value: string): string =>
   value
     .toLowerCase()
     .normalize('NFKC')
+    .replace(/\p{Cf}+/gu, '')
     .replace(/[\p{P}\p{S}\s]+/gu, '');
 
 const scoreExtractedTitle = (title: string): number => {
@@ -756,6 +757,12 @@ export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]
           result.push(...newPosts);
           attempts.push(`${requestSummary} parsed ${newPosts.length} new posts`);
 
+          if (result.length >= config.maxItemsPerPoll) {
+            return result
+              .filter((item) => item.title.length > 0)
+              .slice(0, config.maxItemsPerPoll);
+          }
+
           break;
         }
 
@@ -774,10 +781,13 @@ export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]
         }
       }
 
-      if (result.length > 0) {
-        return result.filter((item) => item.title.length > 0);
-      }
     }
+  }
+
+  if (result.length > 0) {
+    return result
+      .filter((item) => item.title.length > 0)
+      .slice(0, config.maxItemsPerPoll);
   }
 
   const summary = attempts.slice(-6).join(' | ');
@@ -791,41 +801,5 @@ export const findMatchingPosts = (posts: HotdealPost[], keywords: string[]): Hot
 
   return posts.filter((post) => {
     return keywords.some((keyword) => keywordMatchesTitle(post.title, keyword));
-  });
-};
-
-export const findRecentMatchedPosts = (
-  posts: HotdealPost[],
-  keywords: string[],
-  nowHours: number,
-  includeDateMissing = false
-): HotdealPost[] => {
-  const now = new Date();
-  const cutoff = new Date(now.getTime() - nowHours * 60 * 60_000);
-
-  const filterKeywords = keywords.length > 0 ? keywords : [''];
-  const matchesKeyword = (title: string): boolean => {
-    if (filterKeywords.length === 1 && filterKeywords[0] === '') {
-      return true;
-    }
-
-    return filterKeywords.some((keyword) => keywordMatchesTitle(title, keyword));
-  };
-
-  return posts.filter((post) => {
-    if (!matchesKeyword(post.title)) {
-      return false;
-    }
-
-    if (!post.publishedAt) {
-      return includeDateMissing;
-    }
-
-    const publishedTime = new Date(post.publishedAt);
-    if (Number.isNaN(publishedTime.getTime())) {
-      return includeDateMissing;
-    }
-
-    return publishedTime >= cutoff && publishedTime <= now;
   });
 };

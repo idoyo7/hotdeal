@@ -41,7 +41,7 @@ cp .env.example .env
 - `.env`가 없으면 `.env.example`을 복사
 - TypeScript 빌드
 - 컨테이너처럼 동작하는 단발 실행(`RUN_ONCE=true`) 및 DRY_RUN 기본 동작
-- pod 시작 직후 최근 24시간 키워드 매칭 결과 로그 출력
+- startup 프로필(첫 사이클 5페이지 수집)로 실행
 
 원하면 수동으로 실행도 가능합니다.
 
@@ -80,8 +80,10 @@ npm run docker:test
 
 운영 동작(주기/필터/리더 선출/중복 방지) 상세는 `docs/runtime-behavior.md`를 참고하세요.
 
-`MAX_PAGES_PER_POLL`을 1보다 크게 두면 page=2, page=3 ... 형태의 목록 페이지까지 순차 확인합니다.
-`MAX_ITEMS_PER_POLL`은 최종 수집 상한치이므로 페이지를 늘리더라도 이 값까지만 실제 알림 후보로 사용됩니다.
+현재 런타임 동작은 고정입니다.
+
+- startup: 5페이지, 최대 120개 게시글 분석
+- recurring: 1페이지, 최대 30개 게시글 분석
 
 
 ## 환경 변수
@@ -94,10 +96,6 @@ npm run docker:test
 | `ALERT_KEYWORDS` | 콤마 구분 키워드 (기본: `삼다수,요기요`) |
 | `REQUEST_INTERVAL_MS` | 조회 주기 (밀리초, 기본: `180000`) |
 | `REQUEST_TIMEOUT_MS` | HTTP 타임아웃 (밀리초, 기본: `20000`) |
-| `MAX_ITEMS_PER_POLL` | 한 번 조회에서 분석할 최대 게시글 수 (기본: `30`) |
-| `MAX_PAGES_PER_POLL` | 일반 주기에서 순회할 최대 페이지 수 (기본: `1`) |
-| `STARTUP_MAX_ITEMS_PER_POLL` | 시작 직후 첫 루프에서 분석할 최대 게시글 수 (기본: `MAX_ITEMS_PER_POLL`) |
-| `STARTUP_MAX_PAGES_PER_POLL` | 시작 직후 첫 루프에서 순회할 최대 페이지 수 (기본: `MAX_PAGES_PER_POLL`) |
 | `STATE_FILE_PATH` | 중복 방지 저장 경로 (기본: 빈 값, file-state 비활성) |
 | `USE_FILE_STATE` | `true`면 `STATE_FILE_PATH`에 상태 저장, 기본은 `false` |
 | `USE_REDIS_STATE` | `true`면 Redis를 중복 방지 상태 저장소로 사용 |
@@ -111,9 +109,6 @@ npm run docker:test
 | `LEADER_ELECTION_LEASE_DURATION_SECONDS` | Lease 만료 시간(초, 기본: `30`) |
 | `LEADER_ELECTION_RENEW_INTERVAL_MS` | Lease 갱신 주기(ms, 기본: `10000`) |
 | `LOG_LEVEL` | 로그 레벨 (`debug` / `info` / `error`, 기본 `info`) |
-| `SHOW_RECENT_MATCHES` | 최근 매칭 결과 로그 출력 여부 (`true`/`false`, 실제 출력은 `LOG_LEVEL=debug`일 때) |
-| `LOOKBACK_HOURS` | 일반 주기에서 사용할 최근 조회 윈도우 시간(기본: `3`) |
-| `STARTUP_LOOKBACK_HOURS` | 프로세스 시작 직후 첫 조회에서 사용할 lookback 시간(기본: `168`) |
 | `DRY_RUN` | `true`면 알림 전송 없이 로그만 출력 |
 | `RUN_ONCE` | `true`면 한 번만 실행 후 종료 |
 | `USER_AGENT` | HTTP 요청 User-Agent |
@@ -135,24 +130,38 @@ Slack 또는 Telegram 둘 다 설정하면 둘 다 전송됩니다.
 
 ### 1) Redis + Leader Election 모드(권장)
 
-아래 스크립트는 Redis 상태 저장 + Lease 기반 leader election 구성을 함께 배포합니다.
 Redis TTL(기본 7일) 동안 중복 상태가 유지되며, 다중 Pod에서도 리더 1개만 폴링을 수행합니다.
+먼저 notifier secret을 생성한 뒤, 매니페스트를 순서대로 apply 하세요.
 
 ```bash
-bash scripts/apply-k8s-from-config.sh
+kubectl -n default create secret generic fmkorea-hotdeal-monitor-secret \
+  --from-literal=slack-webhook-url="${SLACK_WEBHOOK_URL:-}" \
+  --from-literal=discord-webhook-url="${DISCORD_WEBHOOK_URL:-}" \
+  --from-literal=telegram-bot-token="${TELEGRAM_BOT_TOKEN:-}" \
+  --from-literal=telegram-chat-id="${TELEGRAM_CHAT_ID:-}" \
+  --dry-run=client -o yaml | kubectl -n default apply -f -
+
+kubectl -n default apply -f k8s/redis.yaml
+kubectl -n default apply -f k8s/rbac.yaml
+kubectl -n default apply -f k8s/configmap.yaml
+kubectl -n default apply -f k8s/pdb.yaml
+kubectl -n default apply -f k8s/deployment.yaml
 ```
 
-스크립트는 `config/telegram`, `config/telegram.env`, `config/chatid`, `config/slack*` 값을 읽어
-`fmkorea-hotdeal-monitor-secret`을 생성/업데이트한 뒤
-`redis.yaml -> rbac.yaml -> configmap.yaml -> deployment.yaml` 순서로 apply 합니다.
+네임스페이스를 지정하려면 `-n <namespace>`를 같은 방식으로 바꿔 적용하면 됩니다.
+예: `-n hotdeal`.
 
-네임스페이스를 지정하려면 아래처럼 실행하세요.
+실제 apply 없이 검증만 하려면 아래처럼 client dry-run을 사용하세요.
 
 ```bash
-bash scripts/apply-k8s-from-config.sh --namespace hotdeal
+kubectl -n default apply --dry-run=client -f k8s/redis.yaml
+kubectl -n default apply --dry-run=client -f k8s/rbac.yaml
+kubectl -n default apply --dry-run=client -f k8s/configmap.yaml
+kubectl -n default apply --dry-run=client -f k8s/pdb.yaml
+kubectl -n default apply --dry-run=client -f k8s/deployment.yaml
 ```
 
-`k8s/configmap.yaml`의 `ALERT_KEYWORDS`, `LOOKBACK_HOURS`를 운영 목적에 맞게 수정하세요.
+`k8s/configmap.yaml`의 `ALERT_KEYWORDS`를 운영 목적에 맞게 수정하세요.
 `k8s/redis.yaml`은 Redis를 StatefulSet + PVC로 배포합니다.
 버전/호환성 관리를 위해 annotation(`component-version`, `compat-major`)을 넣어두었고, `updateStrategy: OnDelete`로 설정되어 있어 이미지 태그/annotation 변경만으로는 자동 재시작되지 않습니다.
 즉 메이저 호환 정책 안에서 버전 값을 올리더라도 운영자가 Pod를 명시적으로 재시작하기 전까지는 기존 Redis 인스턴스를 계속 사용합니다.
@@ -162,13 +171,11 @@ bash scripts/apply-k8s-from-config.sh --namespace hotdeal
 중복 감지 상태를 컨테이너 재시작 간 유지하고 싶으면 파일 기반 상태 모드로 배포하세요.
 
 ```bash
-bash scripts/apply-k8s-from-config.sh --file-state
-```
-
-실제 적용 없이 검증만 하려면 dry-run을 사용할 수 있습니다.
-
-```bash
-bash scripts/apply-k8s-from-config.sh --dry-run
+kubectl -n default apply -f k8s/rbac.yaml
+kubectl -n default apply -f k8s/configmap.yaml
+kubectl -n default apply -f k8s/pdb.yaml
+kubectl -n default apply -f k8s/pvc.yaml
+kubectl -n default apply -f k8s/deployment-with-file-state.yaml
 ```
 
 운영에서 `CONFIG` 기준으로 `USE_FILE_STATE=true`를 보장하면 됩니다.
@@ -199,39 +206,18 @@ GitHub Repository Secrets에 아래 항목을 설정하세요.
 
 빌드 아키텍처는 `linux/amd64`(x86_64) 단일로 설정되어 있습니다.
 
-## 컨테이너 로그에서 최근 1주일 + 키워드 확인 예시
+## 컨테이너 로그 예시
 
 ```
-[$TIME] Daily keyword summary for board (YYYY-MM-DD), keyword(s): 삼다수,요기요 with lookback 168h
-- [IN_WINDOW] [2026-03-03T12:34:56.000Z] [삼다수] 2L ... -> https://www.fmkorea.com/link
-- [UNPARSEABLE] [invalid-date] [삼다수] 3L ... -> https://www.fmkorea.com/link
+{"event":"monitor.matches.summary","cycleMode":"startup","pageDepth":5,"result":{"matched":2,"unparseableDate":1}}
+{"event":"monitor.cycle.pipeline","options":{"cycleMode":"startup","pageDepth":5,"itemLimit":120},"result":{"fetched":120,"keywordMatched":2,"candidates":2,"unparseableDate":1}}
 ```
 
-`ALERT_KEYWORDS`에 `삼다수,요기요`를 넣고 `LOOKBACK_HOURS=168`, `STARTUP_LOOKBACK_HOURS=24`, `SHOW_RECENT_MATCHES=true`로 두면,
-pod 재시작 직후 첫 조회는 최근 24시간을 기준으로 보여주고, 이후 주기 조회는 1주일 기준으로 동작합니다.
+pod 재시작 직후 첫 조회는 startup 프로필(5페이지)로 동작하고,
+이후 주기 조회는 recurring 프로필(1페이지)로 동작합니다.
 
-파싱이 실패해 `publishedAt`이 비어 있을 때는 최근 로그에서 확인할 수 있도록
-`No parseable date` 항목을 함께 출력합니다.
-`sambdasu-batch.sh` (또는 `run-sambdasu-batch.sh`)는 실제 집계 전용으로 아래와 같이 분류해 보여줍니다.
-
-연속 백그라운드 모드는 `--bg` 파라미터 하나로 실행할 수 있습니다.
-
-```bash
-bash scripts/sambdasu-batch.sh --bg
-```
-
-기본 로그/프로세스 파일:
-- `logs/sambdasu-batch.log`
-- `logs/sambdasu-batch.pid`
-
-중지는 아래처럼 가능합니다.
-
-```bash
-kill "$(cat logs/sambdasu-batch.pid)"
-```
-
-기존 호환을 위해 `run-samdau-batch.sh`, `run-sambda-batch.sh`는 내부적으로
-`run-sambdasu-batch.sh`를 호출합니다.
+파싱이 실패해 `publishedAt`이 비어 있거나 잘못되면
+`unparseableDate` 필드로 함께 기록됩니다.
 
 `config/telegram` 또는 `config/telegram.env`를 사용할 때 Telegram 실제 전송을 하려면
 `TELEGRAM_BOT_TOKEN`과 `TELEGRAM_CHAT_ID`가 모두 있어야 합니다.
@@ -243,10 +229,8 @@ kill "$(cat logs/sambdasu-batch.pid)"
 - raw 형식: 1줄 `token`, 2줄 `chat_id`
 - key=value 형식: `TELEGRAM_BOT_TOKEN=...`, `TELEGRAM_CHAT_ID=...`
 
-- `IN_WINDOW`: 최근 24시간 내에 속한 매칭 게시물
-- `OUT_OF_WINDOW`: 날짜는 파싱되었지만 lookback 밖의 매칭 게시물
-- `UNPARSEABLE`: 날짜 파싱 실패/누락 매칭 게시물
-- `파싱 가능한 날짜가 없거나...` 메시지: 추출 날짜 신뢰도가 낮아 매칭 결괏값이 참고용이 됩니다.
+- `MATCHED`: 현재 수집한 페이지 범위 안에서 키워드가 매칭된 게시물
+- `UNPARSEABLE_DATE`: 날짜 파싱 실패/누락 매칭 게시물
 - `차단/접근차단` 메시지: FMKorea 차단 응답이 감지된 상태에서 결과 신뢰도가 낮습니다.
 
 ## 일회성 키워드 테스트 (로컬/도커)

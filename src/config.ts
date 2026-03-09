@@ -1,4 +1,8 @@
 import { config as loadEnv } from 'dotenv';
+import {
+  RECURRING_MAX_ITEMS_PER_POLL,
+  RECURRING_MAX_PAGES_PER_POLL,
+} from './runtimeProfile.js';
 
 loadEnv();
 
@@ -23,8 +27,6 @@ export type MonitoringConfig = {
   requestTimeoutMs: number;
   maxPagesPerPoll: number;
   maxItemsPerPoll: number;
-  startupMaxPagesPerPoll: number;
-  startupMaxItemsPerPoll: number;
   seenStateFile: string;
   useFileState: boolean;
   useRedisState: boolean;
@@ -40,10 +42,6 @@ export type MonitoringConfig = {
   logLevel: LogLevel;
   keywords: string[];
   pollOnce: boolean;
-  lookbackHours: number;
-  startupLookbackHours: number;
-  showRecentMatches: boolean;
-  showRecentHours: number;
   userAgent: string;
   playwrightWsEndpoint?: string;
   playwrightExecutablePath?: string;
@@ -162,10 +160,8 @@ export const getConfig = () => {
   const requestIntervalMs = toInt(getEnv('REQUEST_INTERVAL_MS'), 3 * 60 * 1000);
   const requestTimeoutMs = toInt(getEnv('REQUEST_TIMEOUT_MS'), 20_000);
   const crawlMode = toCrawlMode(getEnv('CRAWL_MODE'));
-  const maxPagesPerPoll = toInt(getEnv('MAX_PAGES_PER_POLL'), 1);
-  const maxItemsPerPoll = toInt(getEnv('MAX_ITEMS_PER_POLL'), 30);
-  const startupMaxPagesPerPoll = toInt(getEnv('STARTUP_MAX_PAGES_PER_POLL'), maxPagesPerPoll);
-  const startupMaxItemsPerPoll = toInt(getEnv('STARTUP_MAX_ITEMS_PER_POLL'), maxItemsPerPoll);
+  const maxPagesPerPoll = RECURRING_MAX_PAGES_PER_POLL;
+  const maxItemsPerPoll = RECURRING_MAX_ITEMS_PER_POLL;
   const seenStateFile = getEnv('STATE_FILE_PATH') || '';
   const useFileState = toBoolean(getEnv('USE_FILE_STATE'), seenStateFile.length > 0);
   const useRedisState = toBoolean(getEnv('USE_REDIS_STATE'), false);
@@ -181,9 +177,6 @@ export const getConfig = () => {
   const leaderElectionLeaseDurationSeconds = toInt(getEnv('LEADER_ELECTION_LEASE_DURATION_SECONDS'), 30);
   const leaderElectionRenewIntervalMs = toInt(getEnv('LEADER_ELECTION_RENEW_INTERVAL_MS'), 10_000);
   const logLevel = toLogLevel(getEnv('LOG_LEVEL'));
-  const showRecentMatches = toBoolean(getEnv('SHOW_RECENT_MATCHES'), true);
-  const lookbackHours = toInt(getEnv('LOOKBACK_HOURS'), 3);
-  const startupLookbackHours = toInt(getEnv('STARTUP_LOOKBACK_HOURS'), 168);
   const pollOnce = getEnv('RUN_ONCE') === 'true';
   const userAgent =
     getEnv('USER_AGENT') ||
@@ -217,8 +210,6 @@ export const getConfig = () => {
     requestTimeoutMs,
     maxPagesPerPoll,
     maxItemsPerPoll,
-    startupMaxPagesPerPoll,
-    startupMaxItemsPerPoll,
     seenStateFile,
     useFileState,
     useRedisState,
@@ -232,10 +223,6 @@ export const getConfig = () => {
     leaderElectionLeaseDurationSeconds,
     leaderElectionRenewIntervalMs,
     logLevel,
-    lookbackHours,
-    startupLookbackHours,
-    showRecentMatches,
-    showRecentHours: lookbackHours,
     pollOnce,
     userAgent,
     playwrightWsEndpoint,

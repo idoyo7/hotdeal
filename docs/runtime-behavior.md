@@ -7,13 +7,11 @@
 
 - 기본 폴링 주기: `REQUEST_INTERVAL_MS=180000` (3분)
 - 첫 실행(시작 직후):
-  - `STARTUP_LOOKBACK_HOURS=168` (최근 168시간)
-  - `STARTUP_MAX_PAGES_PER_POLL=8`
-  - `STARTUP_MAX_ITEMS_PER_POLL=120`
+  - 핫딜 목록 `5`페이지까지 수집
+  - 최대 `120`개 게시글까지 분석
 - 이후 주기 실행:
-  - `LOOKBACK_HOURS=3` (최근 3시간)
-  - `MAX_PAGES_PER_POLL=1`
-  - `MAX_ITEMS_PER_POLL=30`
+  - 핫딜 목록 `1`페이지만 수집
+  - 최대 `30`개 게시글까지 분석
 
 즉, 시작 직후에는 넓게 훑고(부트스트랩), 정상 운영 구간에서는 가볍고 빠르게 반응하도록 동작합니다.
 
@@ -22,9 +20,11 @@
 1. Playwright로 FMKorea 목록 페이지를 수집
 2. Cheerio로 게시글/링크/시간 파싱
 3. 키워드(`ALERT_KEYWORDS`) 매칭
-4. 최근 시간 윈도우(첫 실행 168h / 이후 3h)로 알림 후보 필터
+4. 현재 사이클이 수집한 페이지 범위 안에서 알림 후보 결정
 5. Redis 상태키를 기준으로 신규 여부 확인
 6. Slack/Telegram webhook 발송
+
+시간 윈도우 기반 후보 제외는 사용하지 않습니다. 날짜(`publishedAt`)는 참고 메타데이터로만 유지됩니다.
 
 ## 3) 중복 방지
 
@@ -42,7 +42,7 @@
 - Kubernetes Lease 기반 리더 선출 사용
 - `LEADER_ELECTION_ENABLED=true`
 - `LEADER_ELECTION_LEASE_NAME=fmkorea-hotdeal-monitor`
-- `LEADER_ELECTION_LEASE_DURATION_SECONDS=30`
+- `LEADER_ELECTION_LEASE_DURATION_SECONDS=45`
 - `LEADER_ELECTION_RENEW_INTERVAL_MS=10000`
 
 여러 Pod가 떠도 리더만 폴링 루프를 실행합니다.
@@ -67,8 +67,8 @@
 
 레벨별 출력 기준:
 
-- `debug`: 상세 파싱 요약/DRY-RUN 상세
-- `info`: 폴링 시작/대기/정상 알림/상태 전환
+- `debug`: 매칭 게시글 상세와 DRY-RUN 상세
+- `info`: 폴링 시작/대기/후보 요약/정상 알림/상태 전환
 - `error`: 전송 실패, Redis 오류, 치명 오류
 
 ## 7) 배포 체크포인트
