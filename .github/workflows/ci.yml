@@ -15,6 +15,7 @@ jobs:
     env:
       DOCKERHUB_USERNAME: montkim9
       DOCKERHUB_PASSWORD: ${{ secrets.docker_password || secrets.DOCKER_PASSWORD }}
+      IMAGE_NAME: montkim9/fmkorea-hotdeal-monitor
 
     steps:
       - name: Checkout
@@ -33,11 +34,6 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_PASSWORD }}
-
-      - name: Verify Docker Hub login before build
-        run: |
-          echo "${DOCKERHUB_PASSWORD}" | docker login --username "${DOCKERHUB_USERNAME}" --password-stdin >/dev/null
-          echo "Docker Hub login verification succeeded."
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -63,10 +59,8 @@ jobs:
           context: .
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
-            ${{ env.DOCKERHUB_USERNAME }}/fmkorea-hotdeal-monitor:${{ env.SHORT_SHA }}
-            ${{ env.DOCKERHUB_USERNAME }}/fmkorea-hotdeal-monitor:latest
+            ${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
           platforms: linux/amd64
-          # platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -74,5 +68,49 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           echo "Verifying pushed image..."
-          docker manifest inspect ${{ env.DOCKERHUB_USERNAME }}/fmkorea-hotdeal-monitor:${{ env.SHORT_SHA }}
+          docker manifest inspect ${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
           echo "Image successfully pushed with tag: ${{ env.SHORT_SHA }}"
+
+      - name: Update montstrap manifest
+        if: github.ref == 'refs/heads/main'
+        env:
+          MONTSTRAP_DEPLOY_KEY: ${{ secrets.MONTSTRAP_DEPLOY_KEY }}
+        run: |
+          if [ -z "${MONTSTRAP_DEPLOY_KEY}" ]; then
+            echo "::warning::MONTSTRAP_DEPLOY_KEY not set — skipping GitOps manifest update"
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          echo "${MONTSTRAP_DEPLOY_KEY}" > ~/.ssh/montstrap_deploy_key
+          chmod 600 ~/.ssh/montstrap_deploy_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/montstrap_deploy_key -o StrictHostKeyChecking=no"
+
+          git clone --depth 1 git@github.com:idoyo7/montstrap.git /tmp/montstrap
+          cd /tmp/montstrap
+
+          MANIFEST="stage/hotdeal/manifests/deployment.yaml"
+          if [ ! -f "$MANIFEST" ]; then
+            echo "::error::Manifest not found: $MANIFEST"
+            exit 1
+          fi
+
+          sed -i "s|image: docker.io/${IMAGE_NAME}:.*|image: docker.io/${IMAGE_NAME}:${SHORT_SHA}|" "$MANIFEST"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git add "$MANIFEST"
+          git commit -m "chore(hotdeal): update image tag to ${SHORT_SHA}
+
+          Triggered by idoyo7/hotdeal@${GITHUB_SHA::8}"
+          git push origin main
+
+          rm -f ~/.ssh/montstrap_deploy_key
