@@ -76,7 +76,7 @@ const parseRelativeDate = (value: string, now: Date): string | undefined => {
   const compact = value.trim().replace(/\s+/g, '');
 
   if (compact === '방금' || compact === '방금전') {
-    return toIso(new Date());
+    return toIso(now);
   }
 
   const relativeMatch = compact.match(/(\d+)(초|분|시간|일)전/);
@@ -109,18 +109,6 @@ const parseDateToken = (value: string, now: Date): string | undefined => {
   }
 
   const compact = candidate.replace(/\s+/g, '');
-
-  const onlyDigits = compact.replace(/[^0-9]/g, '');
-  if (onlyDigits.length >= 10 && onlyDigits.length <= 16) {
-    const numeric = Number.parseInt(onlyDigits, 10);
-    if (!Number.isNaN(numeric)) {
-      const ms = onlyDigits.length === 10 ? numeric * 1000 : numeric;
-      const parsedEpoch = new Date(ms);
-      if (!Number.isNaN(parsedEpoch.getTime())) {
-        return toIso(parsedEpoch);
-      }
-    }
-  }
 
   const koreanYearMatch = candidate.match(/(20\d{2})년\s*(\d{1,2})월\s*(\d{1,2})일(?:\s*(\d{1,2})시\s*(\d{1,2})분?)?/);
   if (koreanYearMatch) {
@@ -214,6 +202,22 @@ const parseDateToken = (value: string, now: Date): string | undefined => {
     parsed.setHours(Number.parseInt(simpleTimeMatch[1], 10), Number.parseInt(simpleTimeMatch[2], 10), 0, 0);
     if (!Number.isNaN(parsed.getTime())) {
       return toIso(parsed);
+    }
+  }
+
+  const onlyDigits = compact.replace(/[^0-9]/g, '');
+  if (onlyDigits.length >= 10 && onlyDigits.length <= 16) {
+    const numeric = Number.parseInt(onlyDigits, 10);
+    if (!Number.isNaN(numeric)) {
+      const ms = onlyDigits.length === 10 ? numeric * 1000 : numeric;
+      const parsedEpoch = new Date(ms);
+      if (
+        !Number.isNaN(parsedEpoch.getTime()) &&
+        parsedEpoch.getFullYear() >= 2020 &&
+        parsedEpoch.getFullYear() <= 2035
+      ) {
+        return toIso(parsedEpoch);
+      }
     }
   }
 
@@ -659,6 +663,11 @@ const extractWithFallback = (doc: CheerioAPI, baseUrl: string, config: AppConfig
     return posts;
   }
 
+  if (!config.enableLegacyDomFallbackScrape) {
+    return posts;
+  }
+
+  const now = new Date();
   const titleHints = ['title', 'subject', 'name', 'subject-link'];
   const fallback: HotdealPost[] = [];
   const used = new Map<string, number>();
@@ -697,7 +706,7 @@ const extractWithFallback = (doc: CheerioAPI, baseUrl: string, config: AppConfig
       return;
     }
 
-    const publishedAt = getPublishedDate(node, new Date());
+    const publishedAt = getPublishedDate(node, now);
     add(title, link, publishedAt);
   });
 
@@ -755,6 +764,10 @@ export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]
           pageHasPosts = true;
           result.push(...newPosts);
           attempts.push(`${requestSummary} parsed ${newPosts.length} new posts`);
+
+          if (result.length >= config.maxItemsPerPoll) {
+            return result.slice(0, config.maxItemsPerPoll).filter((item) => item.title.length > 0);
+          }
 
           break;
         }

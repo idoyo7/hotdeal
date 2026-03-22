@@ -53,6 +53,7 @@ export type MonitoringConfig = {
   postSelector?: string;
   linkSelector?: string;
   titleSelector?: string;
+  enableLegacyDomFallbackScrape: boolean;
 };
 
 const getEnv = (key: string): string | undefined => {
@@ -196,6 +197,7 @@ export const getConfig = () => {
   const postSelector = getEnv('POST_SELECTOR');
   const linkSelector = getEnv('LINK_SELECTOR');
   const titleSelector = getEnv('TITLE_SELECTOR');
+  const enableLegacyDomFallbackScrape = toBoolean(getEnv('ENABLE_LEGACY_DOM_FALLBACK_SCRAPE'), false);
   const notifierTargets = toNotifierTargets(getEnv('NOTIFIER_TARGETS'));
 
   const keywords = splitKeywords(getEnv('ALERT_KEYWORDS')).filter(Boolean);
@@ -246,6 +248,7 @@ export const getConfig = () => {
     postSelector,
     linkSelector,
     titleSelector,
+    enableLegacyDomFallbackScrape,
     notifier,
     keywords,
   } as MonitoringConfig & { notifier: NotifierConfig };

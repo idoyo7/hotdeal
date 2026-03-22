@@ -9,6 +9,8 @@ type RedisStateOptions = {
   ttlSeconds: number;
 };
 
+const MAX_MEMORY_STATE_SIZE = 10_000;
+
 export class StateStore {
   private seen: Set<string> = new Set();
   private redis?: RedisClientType;
@@ -158,7 +160,24 @@ export class StateStore {
     }
 
     this.seen.add(id);
+    this.evictIfNeeded();
     return true;
+  }
+
+  private evictIfNeeded(): void {
+    if (this.useRedis || this.seen.size <= MAX_MEMORY_STATE_SIZE) {
+      return;
+    }
+
+    const excess = this.seen.size - MAX_MEMORY_STATE_SIZE;
+    let removed = 0;
+    for (const key of this.seen) {
+      if (removed >= excess) {
+        break;
+      }
+      this.seen.delete(key);
+      removed += 1;
+    }
   }
 
   async unclaim(id: string): Promise<void> {

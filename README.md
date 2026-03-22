@@ -128,6 +128,7 @@ npm run docker:test
 | `POST_SELECTOR` | 게시글 항목 선택자(선택) |
 | `LINK_SELECTOR` | 링크 선택자(선택) |
 | `TITLE_SELECTOR` | 제목 선택자(선택) |
+| `ENABLE_LEGACY_DOM_FALLBACK_SCRAPE` | 구식 DOM fallback 추출(`doc('*')` 전체 순회) 사용 여부 (`true`/`false`, 기본 `false`) |
 
 Slack 또는 Telegram 둘 다 설정하면 둘 다 전송됩니다.
 
