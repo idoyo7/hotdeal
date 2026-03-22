@@ -74,21 +74,14 @@ jobs:
       - name: Update montstrap manifest
         if: github.ref == 'refs/heads/main'
         env:
-          MONTSTRAP_DEPLOY_KEY: ${{ secrets.MONTSTRAP_DEPLOY_KEY }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
-          if [ -z "${MONTSTRAP_DEPLOY_KEY}" ]; then
-            echo "::warning::MONTSTRAP_DEPLOY_KEY not set — skipping GitOps manifest update"
+          if [ -z "${GH_PAT}" ]; then
+            echo "::warning::GH_PAT not set — skipping GitOps manifest update"
             exit 0
           fi
 
-          mkdir -p ~/.ssh
-          echo "${MONTSTRAP_DEPLOY_KEY}" > ~/.ssh/montstrap_deploy_key
-          chmod 600 ~/.ssh/montstrap_deploy_key
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-
-          export GIT_SSH_COMMAND="ssh -i ~/.ssh/montstrap_deploy_key -o StrictHostKeyChecking=no"
-
-          git clone --depth 1 git@github.com:idoyo7/montstrap.git /tmp/montstrap
+          git clone --depth 1 https://x-access-token:${GH_PAT}@github.com/idoyo7/montstrap.git /tmp/montstrap
           cd /tmp/montstrap
 
           MANIFEST="stage/hotdeal/manifests/deployment.yaml"
@@ -112,5 +105,3 @@ jobs:
 
           Triggered by idoyo7/hotdeal@${GITHUB_SHA::8}"
           git push origin main
-
-          rm -f ~/.ssh/montstrap_deploy_key
