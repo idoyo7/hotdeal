@@ -4,7 +4,7 @@ metadata:
   name: fmkorea-hotdeal-monitor-config
 data:
   FMKOREA_BOARD_URL: "https://m.fmkorea.com/hotdeal"
-  FMKOREA_BOARD_URLS: "https://www.fmkorea.com/hotdeal"
+  FMKOREA_BOARD_URLS: "https://www.fmkorea.com/hotdeal,https://www.fmkorea.com/index.php?mid=hotdeal&category=1196844726"
   CRAWL_MODE: "playwright"
   REQUEST_INTERVAL_MS: "180000"
   REQUEST_TIMEOUT_MS: "20000"
