@@ -1,7 +1,6 @@
 import {
   fetchLatestPosts,
   findMatchingPosts,
-  findRecentMatchedPosts,
   keywordMatchesTitle,
 } from './monitor.js';
 import { unlinkSync, writeFileSync } from 'node:fs';
@@ -55,180 +54,6 @@ const waitUntilNextPollOrShutdown = async (
 const findMatches = (postTitle: string, keywords: string[]): string[] =>
   keywords.filter((keyword) => keywordMatchesTitle(postTitle, keyword));
 
-const formatPostDate = (publishedAt?: string): string => {
-  if (!publishedAt) {
-    return 'date-not-available';
-  }
-
-  const parsed = new Date(publishedAt);
-  if (Number.isNaN(parsed.getTime())) {
-    return `invalid-date:${publishedAt}`;
-  }
-
-  return parsed.toISOString();
-};
-
-const reportRecentMatches = (config: AppConfig, posts: ReturnType<typeof findMatchingPosts>): void => {
-  if (!config.showRecentMatches || config.showRecentHours <= 0) {
-    return;
-  }
-
-  const debugEnabled = config.logLevel === 'debug';
-
-  const recent = findRecentMatchedPosts(posts, config.keywords, config.showRecentHours, true);
-  const now = new Date();
-  const dateLabel = now;
-  const cutoff = new Date(now.getTime() - config.showRecentHours * 60 * 60_000);
-  const today = dateLabel.toISOString().slice(0, 10);
-
-  const matchesKeyword = (title: string): boolean => {
-    if (config.keywords.length === 0) {
-      return true;
-    }
-
-    return config.keywords.some((keyword) => keywordMatchesTitle(title, keyword));
-  };
-
-  const parseDate = (post: { publishedAt?: string }): Date | null => {
-    if (!post.publishedAt) {
-      return null;
-    }
-
-    const parsed = new Date(post.publishedAt);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  };
-
-  const inWindow = recent.filter((post) => {
-    if (!post.publishedAt) {
-      return false;
-    }
-    const publishedTime = parseDate(post);
-    if (!publishedTime) {
-      return false;
-    }
-
-    return publishedTime >= cutoff && publishedTime <= now;
-  });
-
-  const outOfWindow = posts
-    .filter((post) => matchesKeyword(post.title))
-    .map((post) => ({ post, publishedTime: parseDate(post) }))
-    .filter(({ publishedTime }) => publishedTime !== null)
-    .filter(({ publishedTime }) => {
-      if (!publishedTime) {
-        return false;
-      }
-
-      return publishedTime < cutoff;
-    })
-    .map(({ post }) => post)
-    .filter((post, index, all) => all.findIndex((item) => item.id === post.id) === index);
-
-  const parseFailed = posts
-    .filter((post) => matchesKeyword(post.title))
-    .filter((post) => {
-      if (!post.publishedAt) {
-        return true;
-      }
-
-      return parseDate(post) === null;
-    });
-
-  const printPosts = (
-    tag: 'IN_WINDOW' | 'OUT_OF_WINDOW' | 'UNPARSEABLE',
-    items: Array<{ id: string; title: string; link: string; publishedAt?: string }>
-  ): void => {
-    if (!debugEnabled) {
-      return;
-    }
-
-    for (const post of items) {
-      logger.debug('recent match item', {
-        event: 'monitor.matches.item',
-        classification: tag,
-        post: {
-          id: post.id,
-          title: post.title,
-          link: post.link,
-          publishedAt: formatPostDate(post.publishedAt),
-        },
-      });
-    }
-  };
-
-  const dedupeById = (items: ReturnType<typeof findMatchingPosts>): ReturnType<typeof findMatchingPosts> => {
-    const seen = new Set<string>();
-    return items.filter((post) => {
-      if (seen.has(post.id)) {
-        return false;
-      }
-
-      seen.add(post.id);
-      return true;
-    });
-  };
-
-  const inWindowDedup = dedupeById(inWindow);
-  const outOfWindowDedup = dedupeById(outOfWindow);
-  const parseFailedDedup = dedupeById(parseFailed);
-
-  const summaryFields = {
-    event: 'monitor.matches.summary',
-    boardDate: today,
-    keywords: config.keywords,
-    lookbackHours: config.showRecentHours,
-    result: {
-      inWindow: inWindowDedup.length,
-      outOfWindow: outOfWindowDedup.length,
-      unparseable: parseFailedDedup.length,
-    },
-  };
-
-  logger.info('recent matches summary', summaryFields);
-
-  if (inWindowDedup.length === 0 && outOfWindowDedup.length === 0 && parseFailedDedup.length === 0) {
-    const emptyFields = {
-      event: 'monitor.matches.empty',
-      keywords: config.keywords,
-      lookbackHours: config.showRecentHours,
-    };
-    logger.info('no keyword matches in parsed candidates', emptyFields);
-    return;
-  }
-
-  if (outOfWindowDedup.length > 0 || parseFailedDedup.length > 0) {
-    logger.info('matched posts excluded from alert candidates', {
-      event: 'monitor.matches.excluded',
-      lookbackHours: config.showRecentHours,
-      result: {
-        outOfWindow: outOfWindowDedup.length,
-        unparseable: parseFailedDedup.length,
-      },
-      sample: {
-        outOfWindow: outOfWindowDedup.slice(0, 3).map((post) => ({
-          id: post.id,
-          title: post.title,
-          link: post.link,
-          publishedAt: formatPostDate(post.publishedAt),
-        })),
-        unparseable: parseFailedDedup.slice(0, 3).map((post) => ({
-          id: post.id,
-          title: post.title,
-          link: post.link,
-          publishedAt: formatPostDate(post.publishedAt),
-        })),
-      },
-    });
-  }
-
-  printPosts('IN_WINDOW', inWindowDedup);
-  printPosts('OUT_OF_WINDOW', outOfWindowDedup);
-
-  if (parseFailedDedup.length > 0) {
-    printPosts('UNPARSEABLE', parseFailedDedup);
-  }
-};
-
 type PollCycleResult = {
   candidateCount: number;
   freshCount: number;
@@ -242,7 +67,6 @@ type PollCycleResult = {
 const pollOnce = async (
   config: AppConfig,
   store: StateStore,
-  recentHoursOverride?: number,
   fetchOverrides?: {
     maxPagesPerPoll: number;
     maxItemsPerPoll: number;
@@ -270,82 +94,16 @@ const pollOnce = async (
     : config;
 
   const posts = await fetchLatestPosts(fetchConfig);
-  const reportConfig = recentHoursOverride !== undefined
-    ? { ...fetchConfig, showRecentHours: recentHoursOverride }
-    : fetchConfig;
-  reportRecentMatches(reportConfig, posts);
-
-  const effectiveLookbackHours = Math.max(1, recentHoursOverride ?? config.lookbackHours);
-  const keywordMatched = config.keywords.length > 0
+  const candidates = config.keywords.length > 0
     ? findMatchingPosts(posts, config.keywords)
     : posts;
-  const candidates = config.keywords.length > 0
-    ? findRecentMatchedPosts(posts, config.keywords, effectiveLookbackHours, false)
-    : findRecentMatchedPosts(posts, [''], effectiveLookbackHours, false);
-  const now = new Date();
-  const cutoff = new Date(now.getTime() - effectiveLookbackHours * 60 * 60_000);
-  let unparseableCount = 0;
-  let outOfWindowCount = 0;
-  const unparseableSamples: Array<{ id: string; title: string; link: string; publishedAt?: string }> = [];
-  const outOfWindowSamples: Array<{ id: string; title: string; link: string; publishedAt?: string }> = [];
 
-  for (const post of keywordMatched) {
-    if (!post.publishedAt) {
-      unparseableCount += 1;
-      if (unparseableSamples.length < 3) {
-        unparseableSamples.push({
-          id: post.id,
-          title: post.title,
-          link: post.link,
-          publishedAt: post.publishedAt,
-        });
-      }
-      continue;
-    }
-
-    const parsed = new Date(post.publishedAt);
-    if (Number.isNaN(parsed.getTime())) {
-      unparseableCount += 1;
-      if (unparseableSamples.length < 3) {
-        unparseableSamples.push({
-          id: post.id,
-          title: post.title,
-          link: post.link,
-          publishedAt: post.publishedAt,
-        });
-      }
-      continue;
-    }
-
-    if (parsed < cutoff || parsed > now) {
-      outOfWindowCount += 1;
-      if (outOfWindowSamples.length < 3) {
-        outOfWindowSamples.push({
-          id: post.id,
-          title: post.title,
-          link: post.link,
-          publishedAt: post.publishedAt,
-        });
-      }
-    }
-  }
-
-  if (candidates.length === 0 || outOfWindowCount > 0 || unparseableCount > 0) {
+  if (candidates.length === 0) {
     logger.info('candidate pipeline summary', {
       event: 'monitor.cycle.pipeline',
-      options: {
-        lookbackHours: effectiveLookbackHours,
-      },
       result: {
         fetched: posts.length,
-        keywordMatched: keywordMatched.length,
-        candidates: candidates.length,
-        outOfWindow: outOfWindowCount,
-        unparseable: unparseableCount,
-      },
-      sample: {
-        outOfWindow: outOfWindowSamples,
-        unparseable: unparseableSamples,
+        candidates: 0,
       },
     });
   }
@@ -411,7 +169,6 @@ const pollOnce = async (
     logger.info('candidate dedupe/state decision summary', {
       event: 'monitor.cycle.stateDecision',
       options: {
-        lookbackHours: effectiveLookbackHours,
         dryRun: isDryRun,
         useRedisState,
       },
@@ -711,10 +468,6 @@ const main = async (): Promise<void> => {
         }
       }
 
-      const recentHoursOverride = firstRun
-        ? Math.max(1, config.startupLookbackHours)
-        : Math.max(1, config.lookbackHours);
-
       const maxPagesPerPoll = firstRun
         ? Math.max(1, config.startupMaxPagesPerPoll)
         : Math.max(1, config.maxPagesPerPoll);
@@ -723,7 +476,7 @@ const main = async (): Promise<void> => {
         : Math.max(1, config.maxItemsPerPoll);
 
       const cycleStartedAt = new Date();
-      const cycleResult = await pollOnce(config, store, recentHoursOverride, {
+      const cycleResult = await pollOnce(config, store, {
         maxPagesPerPoll,
         maxItemsPerPoll,
       });
@@ -746,7 +499,6 @@ const main = async (): Promise<void> => {
         },
         options: {
           intervalMs: config.requestIntervalMs,
-          lookbackHours: recentHoursOverride,
           maxPagesPerPoll,
           maxItemsPerPoll,
           pollOnce: config.pollOnce,

@@ -7,11 +7,9 @@
 
 - 기본 폴링 주기: `REQUEST_INTERVAL_MS=180000` (3분)
 - 첫 실행(시작 직후):
-  - `STARTUP_LOOKBACK_HOURS=168` (최근 168시간)
   - `STARTUP_MAX_PAGES_PER_POLL=8`
   - `STARTUP_MAX_ITEMS_PER_POLL=120`
 - 이후 주기 실행:
-  - `LOOKBACK_HOURS=3` (최근 3시간)
   - `MAX_PAGES_PER_POLL=1`
   - `MAX_ITEMS_PER_POLL=30`
 
@@ -22,8 +20,7 @@
 1. Playwright로 FMKorea 목록 페이지를 수집
 2. Cheerio로 게시글/링크/시간 파싱
 3. 키워드(`ALERT_KEYWORDS`) 매칭
-4. 최근 시간 윈도우(첫 실행 168h / 이후 3h)로 알림 후보 필터
-5. Redis 상태키를 기준으로 신규 여부 확인
+4. Redis 상태키를 기준으로 신규 여부 확인
 6. Slack/Telegram webhook 발송
 
 ## 3) 중복 방지

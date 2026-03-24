@@ -38,7 +38,7 @@ test('logger includes custom fields in JSON payload', () => {
     logger.info('monitor cycle run', {
       event: 'monitor.cycle.completed',
       result: { candidates: 10, fresh: 2 },
-      options: { lookbackHours: 3 },
+      options: { maxPagesPerPoll: 1 },
     });
   } finally {
     console.log = originalLog;
@@ -48,7 +48,7 @@ test('logger includes custom fields in JSON payload', () => {
   const parsed = JSON.parse(captured[0]);
   assert.strictEqual(parsed.event, 'monitor.cycle.completed');
   assert.deepStrictEqual(parsed.result, { candidates: 10, fresh: 2 });
-  assert.deepStrictEqual(parsed.options, { lookbackHours: 3 });
+  assert.deepStrictEqual(parsed.options, { maxPagesPerPoll: 1 });
   assert.strictEqual(parsed.message, 'monitor cycle run');
 });
 

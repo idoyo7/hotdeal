@@ -844,38 +844,3 @@ export const findMatchingPosts = (posts: HotdealPost[], keywords: string[]): Hot
   });
 };
 
-export const findRecentMatchedPosts = (
-  posts: HotdealPost[],
-  keywords: string[],
-  nowHours: number,
-  includeDateMissing = false
-): HotdealPost[] => {
-  const now = new Date();
-  const cutoff = new Date(now.getTime() - nowHours * 60 * 60_000);
-
-  const filterKeywords = keywords.length > 0 ? keywords : [''];
-  const matchesKeyword = (title: string): boolean => {
-    if (filterKeywords.length === 1 && filterKeywords[0] === '') {
-      return true;
-    }
-
-    return filterKeywords.some((keyword) => keywordMatchesTitle(title, keyword));
-  };
-
-  return posts.filter((post) => {
-    if (!matchesKeyword(post.title)) {
-      return false;
-    }
-
-    if (!post.publishedAt) {
-      return includeDateMissing;
-    }
-
-    const publishedTime = new Date(post.publishedAt);
-    if (Number.isNaN(publishedTime.getTime())) {
-      return includeDateMissing;
-    }
-
-    return publishedTime >= cutoff && publishedTime <= now;
-  });
-};

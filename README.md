@@ -111,9 +111,6 @@ npm run docker:test
 | `LEADER_ELECTION_LEASE_DURATION_SECONDS` | Lease 만료 시간(초, 기본: `30`) |
 | `LEADER_ELECTION_RENEW_INTERVAL_MS` | Lease 갱신 주기(ms, 기본: `10000`) |
 | `LOG_LEVEL` | 로그 레벨 (`debug` / `info` / `error`, 기본 `info`) |
-| `SHOW_RECENT_MATCHES` | 최근 매칭 결과 로그 출력 여부 (`true`/`false`, 실제 출력은 `LOG_LEVEL=debug`일 때) |
-| `LOOKBACK_HOURS` | 일반 주기에서 사용할 최근 조회 윈도우 시간(기본: `3`) |
-| `STARTUP_LOOKBACK_HOURS` | 프로세스 시작 직후 첫 조회에서 사용할 lookback 시간(기본: `168`) |
 | `DRY_RUN` | `true`면 알림 전송 없이 로그만 출력 |
 | `RUN_ONCE` | `true`면 한 번만 실행 후 종료 |
 | `USER_AGENT` | HTTP 요청 User-Agent |
@@ -153,7 +150,7 @@ bash scripts/apply-k8s-from-config.sh
 bash scripts/apply-k8s-from-config.sh --namespace hotdeal
 ```
 
-`k8s/configmap.yaml`의 `ALERT_KEYWORDS`, `LOOKBACK_HOURS`를 운영 목적에 맞게 수정하세요.
+`k8s/configmap.yaml`의 `ALERT_KEYWORDS`를 운영 목적에 맞게 수정하세요.
 `k8s/redis.yaml`은 Redis를 StatefulSet + PVC로 배포합니다.
 버전/호환성 관리를 위해 annotation(`component-version`, `compat-major`)을 넣어두었고, `updateStrategy: OnDelete`로 설정되어 있어 이미지 태그/annotation 변경만으로는 자동 재시작되지 않습니다.
 즉 메이저 호환 정책 안에서 버전 값을 올리더라도 운영자가 Pod를 명시적으로 재시작하기 전까지는 기존 Redis 인스턴스를 계속 사용합니다.
@@ -203,13 +200,12 @@ GitHub Repository Secrets에 아래 항목을 설정하세요.
 ## 컨테이너 로그에서 최근 1주일 + 키워드 확인 예시
 
 ```
-[$TIME] Daily keyword summary for board (YYYY-MM-DD), keyword(s): 삼다수,요기요 with lookback 168h
-- [IN_WINDOW] [2026-03-03T12:34:56.000Z] [삼다수] 2L ... -> https://www.fmkorea.com/link
+[$TIME] Daily keyword summary for board (YYYY-MM-DD), keyword(s): 삼다수,요기요
+- [MATCHED] [2026-03-03T12:34:56.000Z] [삼다수] 2L ... -> https://www.fmkorea.com/link
 - [UNPARSEABLE] [invalid-date] [삼다수] 3L ... -> https://www.fmkorea.com/link
 ```
 
-`ALERT_KEYWORDS`에 `삼다수,요기요`를 넣고 `LOOKBACK_HOURS=168`, `STARTUP_LOOKBACK_HOURS=24`, `SHOW_RECENT_MATCHES=true`로 두면,
-pod 재시작 직후 첫 조회는 최근 24시간을 기준으로 보여주고, 이후 주기 조회는 1주일 기준으로 동작합니다.
+`ALERT_KEYWORDS`에 `삼다수,요기요`를 넣으면 키워드 매칭 게시물이 발견될 때 알림을 전송합니다.
 
 파싱이 실패해 `publishedAt`이 비어 있을 때는 최근 로그에서 확인할 수 있도록
 `No parseable date` 항목을 함께 출력합니다.
@@ -244,8 +240,6 @@ kill "$(cat logs/sambdasu-batch.pid)"
 - raw 형식: 1줄 `token`, 2줄 `chat_id`
 - key=value 형식: `TELEGRAM_BOT_TOKEN=...`, `TELEGRAM_CHAT_ID=...`
 
-- `IN_WINDOW`: 최근 24시간 내에 속한 매칭 게시물
-- `OUT_OF_WINDOW`: 날짜는 파싱되었지만 lookback 밖의 매칭 게시물
 - `UNPARSEABLE`: 날짜 파싱 실패/누락 매칭 게시물
 - `파싱 가능한 날짜가 없거나...` 메시지: 추출 날짜 신뢰도가 낮아 매칭 결괏값이 참고용이 됩니다.
 - `차단/접근차단` 메시지: FMKorea 차단 응답이 감지된 상태에서 결과 신뢰도가 낮습니다.

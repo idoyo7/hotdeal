@@ -40,10 +40,6 @@ export type MonitoringConfig = {
   logLevel: LogLevel;
   keywords: string[];
   pollOnce: boolean;
-  lookbackHours: number;
-  startupLookbackHours: number;
-  showRecentMatches: boolean;
-  showRecentHours: number;
   userAgent: string;
   playwrightWsEndpoint?: string;
   playwrightExecutablePath?: string;
@@ -182,9 +178,6 @@ export const getConfig = () => {
   const leaderElectionLeaseDurationSeconds = toInt(getEnv('LEADER_ELECTION_LEASE_DURATION_SECONDS'), 30);
   const leaderElectionRenewIntervalMs = toInt(getEnv('LEADER_ELECTION_RENEW_INTERVAL_MS'), 10_000);
   const logLevel = toLogLevel(getEnv('LOG_LEVEL'));
-  const showRecentMatches = toBoolean(getEnv('SHOW_RECENT_MATCHES'), true);
-  const lookbackHours = toInt(getEnv('LOOKBACK_HOURS'), 3);
-  const startupLookbackHours = toInt(getEnv('STARTUP_LOOKBACK_HOURS'), 168);
   const pollOnce = getEnv('RUN_ONCE') === 'true';
   const userAgent =
     getEnv('USER_AGENT') ||
@@ -234,10 +227,6 @@ export const getConfig = () => {
     leaderElectionLeaseDurationSeconds,
     leaderElectionRenewIntervalMs,
     logLevel,
-    lookbackHours,
-    startupLookbackHours,
-    showRecentMatches,
-    showRecentHours: lookbackHours,
     pollOnce,
     userAgent,
     playwrightWsEndpoint,
