@@ -713,88 +713,125 @@ const extractWithFallback = (doc: CheerioAPI, baseUrl: string, config: AppConfig
   return fallback;
 };
 
-export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]> => {
+/**
+ * 단일 보드 소스(+ 미러 fallback)에서 게시글을 가져온다.
+ * 미러는 원본 URL이 실패했을 때만 시도하는 fallback이다.
+ */
+const fetchFromBoardSource = async (
+  boardUrl: string,
+  config: AppConfig,
+  seen: Set<string>,
+  userAgents: string[],
+  attemptOffset: number
+): Promise<{ posts: HotdealPost[]; attempts: string[]; nextOffset: number }> => {
+  const posts: HotdealPost[] = [];
   const attempts: string[] = [];
+  const mirrors = dedupeUrls([boardUrl, ...deriveBoardMirrors(boardUrl)]);
+  let attemptIndex = attemptOffset;
 
-  const result: HotdealPost[] = [];
+  for (const activeBoardUrl of mirrors) {
+    let consecutiveEmptyPages = 0;
+    let boardHasPosts = false;
+
+    for (let page = 1; page <= config.maxPagesPerPoll; page += 1) {
+      const urlCandidates = collectUrlCandidates(activeBoardUrl, page);
+      let pageHasPosts = false;
+
+      for (const candidateUrl of urlCandidates) {
+        const requestSummary = `${activeBoardUrl}${candidateUrl === activeBoardUrl ? '' : ` -> ${candidateUrl}`}`;
+        const userAgent = userAgents[attemptIndex % userAgents.length] ?? config.userAgent;
+        attemptIndex += 1;
+
+        const fetched = await fetchCandidateBody(candidateUrl, activeBoardUrl, userAgent, config);
+        for (const note of fetched.notes) {
+          attempts.push(`${requestSummary} ${note}`);
+        }
+
+        if (!fetched.body) {
+          continue;
+        }
+
+        const $ = load(fetched.body);
+        const all = extractWithFallback($, activeBoardUrl, config);
+        const newPosts = all.filter((post) => {
+          if (seen.has(post.id)) {
+            return false;
+          }
+          seen.add(post.id);
+          return true;
+        });
+
+        if (newPosts.length === 0) {
+          attempts.push(`${requestSummary} parsed 0 new posts`);
+          continue;
+        }
+
+        pageHasPosts = true;
+        boardHasPosts = true;
+        posts.push(...newPosts);
+        attempts.push(`${requestSummary} parsed ${newPosts.length} new posts`);
+        break;
+      }
+
+      if (!pageHasPosts) {
+        consecutiveEmptyPages += 1;
+      } else {
+        consecutiveEmptyPages = 0;
+      }
+
+      if (consecutiveEmptyPages >= 2) {
+        break;
+      }
+
+      if (page < config.maxPagesPerPoll && posts.length > 0) {
+        await sleep(350);
+      }
+    }
+
+    // 미러는 fallback — 원본에서 게시글을 찾았으면 미러 시도 불필요
+    if (boardHasPosts) {
+      break;
+    }
+  }
+
+  return { posts, attempts, nextOffset: attemptIndex };
+};
+
+export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]> => {
+  const allAttempts: string[] = [];
+  const allPosts: HotdealPost[] = [];
   const seen = new Set<string>();
   const userAgents = [...new Set([config.userAgent, ...DEFAULT_USER_AGENTS])];
   let attemptIndex = 0;
 
+  // 각 boardUrl은 독립적인 크롤링 소스 — 전부 순회
   for (const boardUrl of config.boardUrls) {
-    const boardCandidates = dedupeUrls([boardUrl, ...deriveBoardMirrors(boardUrl)]);
+    const { posts, attempts, nextOffset } = await fetchFromBoardSource(
+      boardUrl,
+      config,
+      seen,
+      userAgents,
+      attemptIndex
+    );
 
-    for (const activeBoardUrl of boardCandidates) {
-      let consecutiveEmptyPages = 0;
+    attemptIndex = nextOffset;
+    allAttempts.push(...attempts);
+    allPosts.push(...posts);
 
-      for (let page = 1; page <= config.maxPagesPerPoll; page += 1) {
-        const urlCandidates = collectUrlCandidates(activeBoardUrl, page);
-        let pageHasPosts = false;
-
-        for (const candidateUrl of urlCandidates) {
-          const requestSummary = `${activeBoardUrl}${candidateUrl === activeBoardUrl ? '' : ` -> ${candidateUrl}`}`;
-          const userAgent = userAgents[attemptIndex % userAgents.length] ?? config.userAgent;
-          attemptIndex += 1;
-
-          const fetched = await fetchCandidateBody(candidateUrl, activeBoardUrl, userAgent, config);
-          for (const note of fetched.notes) {
-            attempts.push(`${requestSummary} ${note}`);
-          }
-
-          if (!fetched.body) {
-            continue;
-          }
-
-          const $ = load(fetched.body);
-          const all = extractWithFallback($, activeBoardUrl, config);
-          const newPosts = all.filter((post) => {
-            if (seen.has(post.id)) {
-              return false;
-            }
-
-            seen.add(post.id);
-            return true;
-          });
-
-          if (newPosts.length === 0) {
-            attempts.push(`${requestSummary} parsed 0 new posts`);
-            continue;
-          }
-
-          pageHasPosts = true;
-          result.push(...newPosts);
-          attempts.push(`${requestSummary} parsed ${newPosts.length} new posts`);
-
-          if (result.length >= config.maxItemsPerPoll) {
-            return result.slice(0, config.maxItemsPerPoll).filter((item) => item.title.length > 0);
-          }
-
-          break;
-        }
-
-        if (!pageHasPosts) {
-          consecutiveEmptyPages += 1;
-        } else {
-          consecutiveEmptyPages = 0;
-        }
-
-        if (consecutiveEmptyPages >= 2) {
-          break;
-        }
-
-        if (page < config.maxPagesPerPoll && result.length > 0) {
-          await sleep(350);
-        }
-      }
-
-      if (result.length > 0) {
-        return result.filter((item) => item.title.length > 0);
-      }
+    // 소스 간 요청 간격
+    if (posts.length > 0 && config.boardUrls.indexOf(boardUrl) < config.boardUrls.length - 1) {
+      await sleep(500);
     }
   }
 
-  const summary = attempts.slice(-6).join(' | ');
-  throw new Error(`No valid board content found. Attempts: ${summary}`);
+  if (allPosts.length === 0) {
+    const summary = allAttempts.slice(-6).join(' | ');
+    throw new Error(`No valid board content found. Attempts: ${summary}`);
+  }
+
+  return allPosts
+    .filter((item) => item.title.length > 0)
+    .slice(0, config.maxItemsPerPoll);
 };
 
 export const findMatchingPosts = (posts: HotdealPost[], keywords: string[]): HotdealPost[] => {
