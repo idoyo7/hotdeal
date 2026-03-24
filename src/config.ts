@@ -2,7 +2,7 @@ import { config as loadEnv } from 'dotenv';
 
 loadEnv();
 
-export type LogLevel = 'debug' | 'info' | 'error';
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export type NotifierTarget = 'slack' | 'telegram' | 'discord';
 
@@ -87,7 +87,7 @@ const toCrawlMode = (value: string | undefined): 'http' | 'playwright' | 'auto' 
 
 const toLogLevel = (value: string | undefined): LogLevel => {
   const normalized = value?.trim().toLowerCase();
-  if (normalized === 'debug' || normalized === 'info' || normalized === 'error') {
+  if (normalized === 'debug' || normalized === 'info' || normalized === 'warn' || normalized === 'error') {
     return normalized;
   }
 

@@ -99,7 +99,7 @@ const pollOnce = async (
     : posts;
 
   if (candidates.length === 0) {
-    logger.info('candidate pipeline summary', {
+    logger.debug('candidate pipeline summary', {
       event: 'monitor.cycle.pipeline',
       result: {
         fetched: posts.length,
@@ -151,7 +151,7 @@ const pollOnce = async (
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : String(error);
       stateCheckFailedCount += 1;
-      logger.error('state store claim/has failed; allowing delivery attempt', error, {
+      logger.warn('state store claim/has failed; allowing delivery attempt', {
         event: 'stateStore.claim.failed',
         reason,
         failOpen: true,
@@ -166,7 +166,7 @@ const pollOnce = async (
   }
 
   if (skippedAlreadyProcessedCount > 0 || stateCheckFailedCount > 0) {
-    logger.info('candidate dedupe/state decision summary', {
+    logger.debug('candidate dedupe/state decision summary', {
       event: 'monitor.cycle.stateDecision',
       options: {
         dryRun: isDryRun,
@@ -238,7 +238,7 @@ const pollOnce = async (
     if (results.length === 0) {
       await safeUnclaim(post.id);
       failedPostCount += 1;
-      logger.error('delivery skipped no active notifier target', undefined, {
+      logger.warn('delivery skipped no active notifier target', {
         event: 'delivery.skipped',
         reason: 'no_notifier_target_active',
         retryReleased: true,
@@ -413,19 +413,19 @@ const main = async (): Promise<void> => {
   });
 
   if (store.isRedisEnabled()) {
-    logger.info('state store selected', {
+    logger.debug('state store selected', {
       event: 'monitor.startup.stateStore',
       mode: 'redis',
       redisPrefix: store.redisPrefix(),
     });
   } else if (config.useFileState) {
-    logger.info('state store selected', {
+    logger.debug('state store selected', {
       event: 'monitor.startup.stateStore',
       mode: 'file',
       path: config.seenStateFile,
     });
   } else {
-    logger.info('state store selected', {
+    logger.debug('state store selected', {
       event: 'monitor.startup.stateStore',
       mode: 'memory',
       resetOnRestart: true,
@@ -433,13 +433,13 @@ const main = async (): Promise<void> => {
   }
 
   if (config.keywords.length === 0) {
-    logger.info('all posts notification mode enabled', {
+    logger.debug('all posts notification mode enabled', {
       event: 'monitor.startup.noKeywordFilter',
     });
   }
 
   if (config.leaderElectionEnabled) {
-    logger.info('leader election enabled', {
+    logger.debug('leader election enabled', {
       event: 'leaderElection.enabled',
       lease: `${config.leaderElectionNamespace}/${config.leaderElectionLeaseName}`,
       identity: config.leaderElectionIdentity,
@@ -449,7 +449,7 @@ const main = async (): Promise<void> => {
   }
 
   setReadinessMarker(true);
-  logger.info('monitor readiness enabled', {
+  logger.debug('monitor readiness enabled', {
     event: 'monitor.readiness.enabled',
     path: readinessPath,
   });

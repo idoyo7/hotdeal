@@ -22,7 +22,7 @@ data:
   LEADER_ELECTION_LEASE_NAME: "fmkorea-hotdeal-monitor"
   LEADER_ELECTION_LEASE_DURATION_SECONDS: "45"
   LEADER_ELECTION_RENEW_INTERVAL_MS: "10000"
-  LOG_LEVEL: "debug"
+  LOG_LEVEL: "info"
   RUN_ONCE: "false"
   DRY_RUN: "false"
   ALERT_KEYWORDS: "삼다수,요기요,펩시,삼겹살,모짜렐라,치즈"

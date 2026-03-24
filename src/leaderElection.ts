@@ -401,7 +401,7 @@ export class LeaderElector {
     try {
       await this.api.replace(replacement);
       this.setLeaderState(false, 'none', 'shutdown_release');
-      logger.info('leader election lease released', {
+      logger.debug('leader election lease released', {
         event: 'leaderElection.lease.released',
         identity: this.identity,
         lease: `${this.namespace}/${this.leaseName}`,
@@ -431,7 +431,7 @@ export class LeaderElector {
     const holder = holderIdentity || 'none';
 
     if (isLeader && !this.leader) {
-      logger.info('leader election acquired', {
+      logger.debug('leader election acquired', {
         event: 'leaderElection.state.changed',
         state: 'acquired',
         identity: this.identity,
@@ -440,7 +440,7 @@ export class LeaderElector {
     }
 
     if (!isLeader && this.leader) {
-      logger.info(reason === 'shutdown_release' ? 'leader election released' : 'leader election lost', {
+      logger.debug(reason === 'shutdown_release' ? 'leader election released' : 'leader election lost', {
         event: 'leaderElection.state.changed',
         state: reason === 'shutdown_release' ? 'released' : 'lost',
         reason,
@@ -451,7 +451,7 @@ export class LeaderElector {
     }
 
     if (!isLeader && this.observedLeader !== holder && reason !== 'shutdown_release') {
-      logger.info('leader election standby', {
+      logger.debug('leader election standby', {
         event: 'leaderElection.state.changed',
         state: 'standby',
         reason,

@@ -59,7 +59,7 @@ export class StateStore {
   async load(): Promise<void> {
     if (this.useRedis) {
       if (this.redis && !this.redis.isOpen) {
-        logger.info('connecting to redis state store', {
+        logger.debug('connecting to redis state store', {
           event: 'stateStore.redis.connecting',
           keyPrefix: this.redisKeyPrefix,
           ttlSeconds: this.redisTtlSeconds,
@@ -67,7 +67,7 @@ export class StateStore {
         await this.redis.connect();
 
         if (this.redisErrorCount > 0) {
-          logger.info('redis connection recovered', {
+          logger.debug('redis connection recovered', {
             event: 'stateStore.redis.connected',
             transientErrorCount: this.redisErrorCount,
           });

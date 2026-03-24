@@ -3,7 +3,8 @@ import type { LogLevel } from './config.js';
 const priorities: Record<LogLevel, number> = {
   debug: 10,
   info: 20,
-  error: 30,
+  warn: 30,
+  error: 40,
 };
 
 let currentLevel: LogLevel = 'info';
@@ -71,6 +72,12 @@ export const logger = {
       return;
     }
     console.log(formatLog('info', message, fields));
+  },
+  warn(message: string, fields?: LogFields): void {
+    if (!shouldLog('warn')) {
+      return;
+    }
+    console.warn(formatLog('warn', message, fields));
   },
   error(message: string, error?: unknown, fields?: LogFields): void {
     if (!shouldLog('error')) {
