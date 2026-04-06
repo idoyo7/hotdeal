@@ -2,6 +2,7 @@ import {
   fetchLatestPosts,
   findMatchingPosts,
   keywordMatchesTitle,
+  closeSharedBrowser,
 } from './monitor.js';
 import { unlinkSync, writeFileSync } from 'node:fs';
 import { getConfig, AppConfig, type NotifierTarget } from './config.js';
@@ -516,6 +517,7 @@ const main = async (): Promise<void> => {
     }
   } finally {
     setReadinessMarker(false);
+    await closeSharedBrowser();
     await leaderElector.close({ releaseLease: shutdownRequested });
     await store.close();
   }

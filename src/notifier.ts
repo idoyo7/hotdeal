@@ -50,8 +50,8 @@ const sendSlack = async (
     return { ok: false, target: 'slack', message: `request failed: ${reason}` };
   }
 
+  const body = await response.text();
   if (!response.ok) {
-    const body = await response.text();
     return { ok: false, target: 'slack', message: `HTTP ${response.status}: ${body}` };
   }
 
@@ -79,8 +79,8 @@ const sendDiscord = async (
     return { ok: false, target: 'discord', message: `request failed: ${reason}` };
   }
 
+  const body = await response.text();
   if (!response.ok) {
-    const body = await response.text();
     const retryAfter = response.headers.get('Retry-After');
     const suffix = retryAfter ? ` (retry-after=${retryAfter}s)` : '';
     return { ok: false, target: 'discord', message: `HTTP ${response.status}${suffix}: ${body}` };
@@ -117,8 +117,8 @@ const sendTelegram = async (
     return { ok: false, target: 'telegram', message: `request failed: ${reason}` };
   }
 
+  const body = await response.text();
   if (!response.ok) {
-    const body = await response.text();
     return { ok: false, target: 'telegram', message: `HTTP ${response.status}: ${body}` };
   }
 

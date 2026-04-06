@@ -3,6 +3,68 @@ import type { Browser } from 'playwright';
 import { AppConfig } from './config.js';
 import { HotdealPost } from './types.js';
 
+let sharedBrowser: Browser | undefined;
+let sharedBrowserConfig: string | undefined;
+let sharedBrowserCreatedAt = 0;
+const BROWSER_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24시간마다 브라우저 재생성
+
+const getBrowserConfigKey = (config: AppConfig): string =>
+  JSON.stringify({
+    wsEndpoint: config.playwrightWsEndpoint,
+    headless: config.playwrightHeadless,
+    executablePath: config.playwrightExecutablePath,
+  });
+
+const getSharedBrowser = async (config: AppConfig): Promise<Browser> => {
+  const key = getBrowserConfigKey(config);
+
+  const isExpired = Date.now() - sharedBrowserCreatedAt > BROWSER_MAX_AGE_MS;
+  if (sharedBrowser?.isConnected() && sharedBrowserConfig === key && !isExpired) {
+    return sharedBrowser;
+  }
+
+  if (sharedBrowser) {
+    await sharedBrowser.close().catch(() => {});
+    sharedBrowser = undefined;
+  }
+
+  const mod = await import('playwright');
+  const chromium = mod.chromium;
+
+  if (config.playwrightWsEndpoint) {
+    sharedBrowser = await chromium.connect(config.playwrightWsEndpoint);
+  } else {
+    const launchArgs = process.platform === 'linux'
+      ? ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      : [];
+
+    sharedBrowser = await chromium.launch({
+      headless: config.playwrightHeadless,
+      executablePath: config.playwrightExecutablePath,
+      args: launchArgs,
+    });
+  }
+
+  sharedBrowserConfig = key;
+  sharedBrowserCreatedAt = Date.now();
+
+  sharedBrowser.on('disconnected', () => {
+    sharedBrowser = undefined;
+    sharedBrowserConfig = undefined;
+    sharedBrowserCreatedAt = 0;
+  });
+
+  return sharedBrowser;
+};
+
+export const closeSharedBrowser = async (): Promise<void> => {
+  if (sharedBrowser) {
+    await sharedBrowser.close().catch(() => {});
+    sharedBrowser = undefined;
+    sharedBrowserConfig = undefined;
+  }
+};
+
 const MAX_PARENT_DEPTH = 4;
 const ANTI_BOT_MARKERS = ['에펨코리아 보안 시스템', 'ddosCheckOnly', '수동 접속 갱신'];
 const DEFAULT_USER_AGENTS = [
@@ -400,27 +462,12 @@ const fetchCandidateByPlaywright = async (
   userAgent: string,
   config: AppConfig
 ): Promise<{ body?: string; note: string }> => {
-  let browser: Browser | undefined;
+  let context: Awaited<ReturnType<Browser['newContext']>> | undefined;
 
   try {
-    const mod = await import('playwright');
-    const chromium = mod.chromium;
+    const browser = await getSharedBrowser(config);
 
-    if (config.playwrightWsEndpoint) {
-      browser = await chromium.connect(config.playwrightWsEndpoint);
-    } else {
-      const launchArgs = process.platform === 'linux'
-        ? ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-        : [];
-
-      browser = await chromium.launch({
-        headless: config.playwrightHeadless,
-        executablePath: config.playwrightExecutablePath,
-        args: launchArgs,
-      });
-    }
-
-    const context = await browser.newContext({
+    context = await browser.newContext({
       userAgent,
       locale: 'ko-KR',
       timezoneId: 'Asia/Seoul',
@@ -452,6 +499,7 @@ const fetchCandidateByPlaywright = async (
 
     const body = await page.content();
     await context.close();
+    context = undefined;
 
     if (looksLikeBlocked(body)) {
       return {
@@ -469,8 +517,8 @@ const fetchCandidateByPlaywright = async (
       note: `playwright request error: ${message}`,
     };
   } finally {
-    if (browser) {
-      await browser.close();
+    if (context) {
+      await context.close().catch(() => {});
     }
   }
 };

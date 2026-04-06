@@ -1,0 +1,198 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1775450903931,
+  "projectRoot": "/Users/mont/evejuni/hotdeal",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": ">=20.0.0",
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "playwright",
+        "version": "1.58.2",
+        "category": "testing"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": "Node.js 20.0.0"
+  },
+  "build": {
+    "buildCommand": "npm run build",
+    "testCommand": "npm test",
+    "lintCommand": "npm run lint",
+    "devCommand": "npm run dev",
+    "scripts": {
+      "build": "tsc -p tsconfig.json",
+      "start": "node dist/index.js",
+      "dev": "tsx watch src/index.ts",
+      "run:local": "bash scripts/run-local.sh",
+      "run:once:local": "bash scripts/run-keyword-once-local.sh",
+      "run:once:docker": "bash scripts/run-keyword-once-docker.sh",
+      "docker:test": "bash scripts/run-docker.sh",
+      "docker:build": "docker build -t fmkorea-hotdeal-monitor:test .",
+      "lint": "tsc -p tsconfig.json --noEmit",
+      "test": "npm run build && node --test tests/*.js"
+    }
+  },
+  "conventions": {
+    "namingStyle": "camelCase/PascalCase",
+    "importStyle": "ES modules",
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "scripts",
+      "src",
+      "tests"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "config": {
+      "path": "config",
+      "purpose": "Configuration files",
+      "fileCount": 2,
+      "lastAccessed": 1775450903914,
+      "keyFiles": [
+        "chatid",
+        "telegram"
+      ]
+    },
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 8,
+      "lastAccessed": 1775450903916,
+      "keyFiles": [
+        "config.js",
+        "index.js",
+        "leaderElection.js",
+        "logger.js",
+        "monitor.js"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 1,
+      "lastAccessed": 1775450903925,
+      "keyFiles": [
+        "runtime-behavior.md"
+      ]
+    },
+    "k8s": {
+      "path": "k8s",
+      "purpose": null,
+      "fileCount": 8,
+      "lastAccessed": 1775450903926,
+      "keyFiles": [
+        "configmap.yaml",
+        "deployment-with-file-state.yaml",
+        "deployment.yaml",
+        "pdb.yaml",
+        "pvc.yaml"
+      ]
+    },
+    "logs": {
+      "path": "logs",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1775450903927,
+      "keyFiles": [
+        "sambdasu-batch.log",
+        "sambdasu-batch.pid"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 11,
+      "lastAccessed": 1775450903927,
+      "keyFiles": [
+        "apply-k8s-from-config.sh",
+        "run-docker.sh",
+        "run-jejusamdau-batch.sh",
+        "run-keyword-once-docker.sh",
+        "run-keyword-once-local.sh"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 8,
+      "lastAccessed": 1775450903927,
+      "keyFiles": [
+        "config.ts",
+        "index.ts",
+        "leaderElection.ts",
+        "logger.ts",
+        "monitor.ts"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 4,
+      "lastAccessed": 1775450903927,
+      "keyFiles": [
+        "config.test.js",
+        "logger.test.js",
+        "monitor.test.js",
+        "notifier.test.js"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/monitor.ts",
+      "accessCount": 16,
+      "lastAccessed": 1775451564909,
+      "type": "file"
+    },
+    {
+      "path": "src/index.ts",
+      "accessCount": 8,
+      "lastAccessed": 1775451440354,
+      "type": "file"
+    },
+    {
+      "path": "src/notifier.ts",
+      "accessCount": 8,
+      "lastAccessed": 1775451501552,
+      "type": "file"
+    },
+    {
+      "path": "src/config.ts",
+      "accessCount": 4,
+      "lastAccessed": 1775451021666,
+      "type": "file"
+    },
+    {
+      "path": "src/stateStore.ts",
+      "accessCount": 2,
+      "lastAccessed": 1775451467213,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
