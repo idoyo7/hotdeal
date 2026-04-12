@@ -346,27 +346,47 @@ const deriveBoardMirrors = (boardUrl: string): string[] => {
   }
 };
 
-const normalizePostId = (link: string): string => {
+const extractFmkoreaPostNumber = (link: string): string | undefined => {
   try {
     const parsed = new URL(link);
     if (parsed.hostname.toLowerCase().endsWith('fmkorea.com')) {
       const segments = parsed.pathname.split('/').filter(Boolean);
       for (let i = segments.length - 1; i >= 0; i -= 1) {
         if (/^\d+$/.test(segments[i]!)) {
-          return `fmkorea-post:${segments[i]}`;
+          return segments[i]!;
         }
       }
 
-      const maybeNumber = parsed.searchParams.get('no');
-      if (maybeNumber) {
-        return `fmkorea-post:${maybeNumber}`;
+      for (const param of ['document_srl', 'no']) {
+        const maybeNumber = parsed.searchParams.get(param);
+        if (maybeNumber && /^\d+$/.test(maybeNumber)) {
+          return maybeNumber;
+        }
       }
     }
 
-    return link;
+    return undefined;
   } catch {
+    return undefined;
+  }
+};
+
+const normalizePostLink = (link: string): string => {
+  const postNumber = extractFmkoreaPostNumber(link);
+  if (!postNumber) {
     return link;
   }
+
+  return `https://www.fmkorea.com/${postNumber}`;
+};
+
+const normalizePostId = (link: string): string => {
+  const postNumber = extractFmkoreaPostNumber(link);
+  if (postNumber) {
+    return `fmkorea-post:${postNumber}`;
+  }
+
+  return link;
 };
 
 const looksLikeBlocked = (body: string): boolean => {
@@ -644,7 +664,7 @@ const extractFromCandidates = (doc: CheerioAPI, baseUrl: string, config: AppConf
       return;
     }
 
-    const normalized = normalizeUrl(baseUrl, url).split('#')[0];
+    const normalized = normalizePostLink(normalizeUrl(baseUrl, url).split('#')[0]);
     const stableId = normalizePostId(normalized);
     if (!normalized || !isLikelyPostUrl(normalized)) {
       return;
@@ -722,7 +742,7 @@ const extractWithFallback = (doc: CheerioAPI, baseUrl: string, config: AppConfig
 
   const add = (title: string, link: string, publishedAt?: string): void => {
     const cleanTitle = title.trim().replace(/\s+/g, ' ');
-    const normalized = normalizeUrl(baseUrl, link).split('#')[0];
+    const normalized = normalizePostLink(normalizeUrl(baseUrl, link).split('#')[0]);
     const stableId = normalizePostId(normalized);
     if (!cleanTitle || !isLikelyPostUrl(normalized)) {
       return;
@@ -891,4 +911,3 @@ export const findMatchingPosts = (posts: HotdealPost[], keywords: string[]): Hot
     return keywords.some((keyword) => keywordMatchesTitle(post.title, keyword));
   });
 };
-
