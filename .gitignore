@@ -18,3 +18,5 @@ scripts/*
 !scripts/run-docker.sh
 !scripts/run-keyword-once-local.sh
 !scripts/run-keyword-once-docker.sh
+!scripts/deploy-lambda.sh
+!scripts/prepare-lambda-package.cjs

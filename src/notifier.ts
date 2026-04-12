@@ -29,7 +29,7 @@ const fetchWithTimeout = async (
   }
 };
 
-const sendSlack = async (
+const sendSlackWebhook = async (
   url: string,
   payload: { text: string },
   timeoutMs: number
@@ -47,12 +47,60 @@ const sendSlack = async (
     );
   } catch (error: unknown) {
     const reason = error instanceof Error ? error.message : String(error);
-    return { ok: false, target: 'slack', message: `request failed: ${reason}` };
+    return { ok: false, target: 'slack', message: `webhook request failed: ${reason}` };
   }
 
   const body = await response.text();
   if (!response.ok) {
-    return { ok: false, target: 'slack', message: `HTTP ${response.status}: ${body}` };
+    return { ok: false, target: 'slack', message: `webhook HTTP ${response.status}: ${body}` };
+  }
+
+  return { ok: true, target: 'slack' };
+};
+
+const sendSlackBot = async (
+  botToken: string,
+  channel: string,
+  text: string,
+  timeoutMs: number
+): Promise<DeliveryResult> => {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      'https://slack.com/api/chat.postMessage',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${botToken}`,
+        },
+        body: JSON.stringify({ channel, text }),
+      },
+      timeoutMs
+    );
+  } catch (error: unknown) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { ok: false, target: 'slack', message: `bot request failed: ${reason}` };
+  }
+
+  let body: string;
+  try {
+    body = await response.text();
+  } catch {
+    return { ok: false, target: 'slack', message: `bot HTTP ${response.status}: read failed` };
+  }
+
+  if (!response.ok) {
+    return { ok: false, target: 'slack', message: `bot HTTP ${response.status}: ${body}` };
+  }
+
+  try {
+    const parsed = JSON.parse(body) as { ok?: boolean; error?: string };
+    if (!parsed.ok) {
+      return { ok: false, target: 'slack', message: `bot API error: ${parsed.error ?? 'unknown'}` };
+    }
+  } catch {
+    // non-JSON 200 response — treat as success
   }
 
   return { ok: true, target: 'slack' };
@@ -135,7 +183,10 @@ export const sendAlerts = async (
   const isSelected = (target: 'slack' | 'telegram' | 'discord'): boolean =>
     selectedTargets.length === 0 || selectedTargets.includes(target);
 
-  const slackEnabled = isSelected('slack') && Boolean(config.notifier.slackWebhookUrl);
+  const slackBotConfigured =
+    Boolean(config.notifier.slackBotToken) && Boolean(config.notifier.slackChannel);
+  const slackWebhookConfigured = Boolean(config.notifier.slackWebhookUrl);
+  const slackEnabled = isSelected('slack') && (slackBotConfigured || slackWebhookConfigured);
   const telegramEnabled =
     isSelected('telegram') &&
     Boolean(config.notifier.telegramBotToken) &&
@@ -175,8 +226,12 @@ export const sendAlerts = async (
 
   const jobs: Promise<DeliveryResult>[] = [];
 
-  if (slackEnabled && config.notifier.slackWebhookUrl) {
-    jobs.push(sendSlack(config.notifier.slackWebhookUrl, { text }, config.requestTimeoutMs));
+  if (slackEnabled) {
+    if (slackBotConfigured && config.notifier.slackBotToken && config.notifier.slackChannel) {
+      jobs.push(sendSlackBot(config.notifier.slackBotToken, config.notifier.slackChannel, text, config.requestTimeoutMs));
+    } else if (config.notifier.slackWebhookUrl) {
+      jobs.push(sendSlackWebhook(config.notifier.slackWebhookUrl, { text }, config.requestTimeoutMs));
+    }
   }
 
   if (telegramEnabled && config.notifier.telegramBotToken && config.notifier.telegramChatId) {

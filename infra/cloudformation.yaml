@@ -1,0 +1,227 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  FMKorea Hotdeal Monitor - Lambda + DynamoDB + EventBridge.
+  Non-VPC, HTTP crawl, fresh execution model.
+
+Parameters:
+  CodeS3Bucket:
+    Type: String
+    Description: S3 bucket containing the Lambda deployment zip
+
+  CodeS3Key:
+    Type: String
+    Description: S3 object key for the Lambda deployment zip
+
+  AlertKeywords:
+    Type: String
+    Default: ''
+    Description: Comma-separated alert keywords (empty = all posts)
+
+  FmkoreaBoardUrl:
+    Type: String
+    Default: 'https://m.fmkorea.com/hotdeal'
+
+  FmkoreaBoardUrls:
+    Type: String
+    Default: ''
+    Description: Additional comma-separated board URLs
+
+  CrawlMode:
+    Type: String
+    Default: 'http'
+    AllowedValues: ['http']
+
+  MaxPagesPerPoll:
+    Type: Number
+    Default: 1
+
+  MaxItemsPerPoll:
+    Type: Number
+    Default: 30
+
+  RequestTimeoutMs:
+    Type: Number
+    Default: 20000
+
+  SlackWebhookUrl:
+    Type: String
+    Default: ''
+    NoEcho: true
+
+  SlackBotToken:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: Slack Bot Token (xoxb-...). Used instead of webhook if set.
+
+  SlackChannel:
+    Type: String
+    Default: ''
+    Description: Slack channel ID for Bot Token mode (e.g. C1234567890)
+
+  TelegramBotToken:
+    Type: String
+    Default: ''
+    NoEcho: true
+
+  TelegramChatId:
+    Type: String
+    Default: ''
+    NoEcho: true
+
+  DiscordWebhookUrl:
+    Type: String
+    Default: ''
+    NoEcho: true
+
+  DryRun:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+  ScheduleExpression:
+    Type: String
+    Default: 'rate(3 minutes)'
+
+  ScheduleEnabled:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+  DynamoDbTtlSeconds:
+    Type: Number
+    Default: 604800
+
+  LogLevel:
+    Type: String
+    Default: 'info'
+    AllowedValues: ['debug', 'info', 'warn', 'error']
+
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90]
+
+Conditions:
+  IsScheduleEnabled: !Equals [!Ref ScheduleEnabled, 'true']
+
+Resources:
+  # ── DynamoDB: dedupe state ──
+  SeenPostsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AWS::StackName}-seen-posts'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: postId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: postId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
+  # ── IAM Role ──
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:DescribeTable
+                Resource: !GetAtt SeenPostsTable.Arn
+
+  # ── Lambda Function ──
+  MonitorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-poll'
+      Runtime: nodejs24.x
+      Handler: dist/entrypoints/lambda.handler
+      Code:
+        S3Bucket: !Ref CodeS3Bucket
+        S3Key: !Ref CodeS3Key
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 60
+      MemorySize: 2048
+      ReservedConcurrentExecutions: 1
+      Environment:
+        Variables:
+          STATE_BACKEND: dynamodb
+          DYNAMODB_TABLE_NAME: !Ref SeenPostsTable
+          DYNAMODB_TTL_SECONDS: !Ref DynamoDbTtlSeconds
+          DYNAMODB_REGION: !Ref AWS::Region
+          CRAWL_MODE: !Ref CrawlMode
+          ALERT_KEYWORDS: !Ref AlertKeywords
+          FMKOREA_BOARD_URL: !Ref FmkoreaBoardUrl
+          FMKOREA_BOARD_URLS: !Ref FmkoreaBoardUrls
+          SLACK_WEBHOOK_URL: !Ref SlackWebhookUrl
+          SLACK_BOT_TOKEN: !Ref SlackBotToken
+          SLACK_CHANNEL: !Ref SlackChannel
+          TELEGRAM_BOT_TOKEN: !Ref TelegramBotToken
+          TELEGRAM_CHAT_ID: !Ref TelegramChatId
+          DISCORD_WEBHOOK_URL: !Ref DiscordWebhookUrl
+          LOG_LEVEL: !Ref LogLevel
+          MAX_PAGES_PER_POLL: !Ref MaxPagesPerPoll
+          MAX_ITEMS_PER_POLL: !Ref MaxItemsPerPoll
+          REQUEST_TIMEOUT_MS: !Ref RequestTimeoutMs
+          DRY_RUN: !Ref DryRun
+
+  # ── CloudWatch Log Group ──
+  MonitorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${MonitorFunction}'
+      RetentionInDays: !Ref LogRetentionDays
+
+  # ── EventBridge Schedule ──
+  ScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AWS::StackName}-schedule'
+      Description: Trigger hotdeal monitor poll cycle
+      ScheduleExpression: !Ref ScheduleExpression
+      State: !If [IsScheduleEnabled, ENABLED, DISABLED]
+      Targets:
+        - Id: HotdealPollTarget
+          Arn: !GetAtt MonitorFunction.Arn
+
+  SchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref MonitorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ScheduleRule.Arn
+
+Outputs:
+  FunctionName:
+    Value: !Ref MonitorFunction
+  FunctionArn:
+    Value: !GetAtt MonitorFunction.Arn
+  DynamoTableName:
+    Value: !Ref SeenPostsTable
+  LogGroupName:
+    Value: !Ref MonitorLogGroup
+  ScheduleRuleName:
+    Value: !Ref ScheduleRule

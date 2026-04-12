@@ -8,12 +8,16 @@ export type NotifierTarget = 'slack' | 'telegram' | 'discord';
 
 export type NotifierConfig = {
   slackWebhookUrl?: string;
+  slackBotToken?: string;
+  slackChannel?: string;
   telegramBotToken?: string;
   telegramChatId?: string;
   discordWebhookUrl?: string;
   targets?: NotifierTarget[];
   dryRun?: boolean;
 };
+
+export type StateBackend = 'memory' | 'file' | 'redis' | 'dynamodb';
 
 export type MonitoringConfig = {
   boardUrl: string;
@@ -31,6 +35,10 @@ export type MonitoringConfig = {
   redisUrl?: string;
   redisKeyPrefix: string;
   redisTtlSeconds: number;
+  stateBackend: StateBackend;
+  dynamoTableName: string;
+  dynamoTtlSeconds: number;
+  dynamoRegion?: string;
   leaderElectionEnabled: boolean;
   leaderElectionLeaseName: string;
   leaderElectionNamespace: string;
@@ -169,6 +177,18 @@ export const getConfig = () => {
   const redisUrl = getEnv('REDIS_URL');
   const redisKeyPrefix = getEnv('REDIS_KEY_PREFIX') || 'hotdeal:seen:';
   const redisTtlSeconds = toInt(getEnv('REDIS_TTL_SECONDS'), 604_800);
+
+  // State backend: explicit selection or backward-compatible derivation
+  const stateBackendRaw = getEnv('STATE_BACKEND')?.trim().toLowerCase();
+  const stateBackend: 'memory' | 'file' | 'redis' | 'dynamodb' =
+    stateBackendRaw === 'redis' || stateBackendRaw === 'dynamodb' ||
+    stateBackendRaw === 'file' || stateBackendRaw === 'memory'
+      ? stateBackendRaw
+      : useRedisState ? 'redis' : useFileState ? 'file' : 'memory';
+  const dynamoTableName = getEnv('DYNAMODB_TABLE_NAME') || 'hotdeal-seen-posts';
+  const dynamoTtlSeconds = toInt(getEnv('DYNAMODB_TTL_SECONDS'), 604_800);
+  const dynamoRegion = getEnv('DYNAMODB_REGION') || getEnv('AWS_REGION');
+
   const leaderElectionEnabled = toBoolean(getEnv('LEADER_ELECTION_ENABLED'), false);
   const leaderElectionLeaseName = getEnv('LEADER_ELECTION_LEASE_NAME') || 'fmkorea-hotdeal-monitor';
   const leaderElectionNamespace =
@@ -197,6 +217,8 @@ export const getConfig = () => {
 
   const notifier: NotifierConfig = {
     slackWebhookUrl: getEnv('SLACK_WEBHOOK_URL'),
+    slackBotToken: getEnv('SLACK_BOT_TOKEN'),
+    slackChannel: getEnv('SLACK_CHANNEL'),
     telegramBotToken: getEnv('TELEGRAM_BOT_TOKEN'),
     telegramChatId: getEnv('TELEGRAM_CHAT_ID'),
     discordWebhookUrl: getEnv('DISCORD_WEBHOOK_URL'),
@@ -220,6 +242,10 @@ export const getConfig = () => {
     redisUrl,
     redisKeyPrefix,
     redisTtlSeconds,
+    stateBackend,
+    dynamoTableName,
+    dynamoTtlSeconds,
+    dynamoRegion,
     leaderElectionEnabled,
     leaderElectionLeaseName,
     leaderElectionNamespace,
