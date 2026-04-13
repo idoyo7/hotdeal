@@ -1,5 +1,5 @@
 import { load, type CheerioAPI } from 'cheerio';
-import type { Browser } from 'playwright';
+import type { Browser } from 'playwright-core';
 import { AppConfig } from './config.js';
 import { HotdealPost } from './types.js';
 
@@ -28,19 +28,31 @@ const getSharedBrowser = async (config: AppConfig): Promise<Browser> => {
     sharedBrowser = undefined;
   }
 
-  const mod = await import('playwright');
+  const mod = await import('playwright-core');
   const chromium = mod.chromium;
 
   if (config.playwrightWsEndpoint) {
     sharedBrowser = await chromium.connect(config.playwrightWsEndpoint);
   } else {
-    const launchArgs = process.platform === 'linux'
+    let executablePath = config.playwrightExecutablePath;
+    let launchArgs = process.platform === 'linux'
       ? ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
       : [];
 
+    // Lambda: use @sparticuz/chromium-min when no explicit executable path is set
+    if (!executablePath) {
+      try {
+        const sparticuz = (await import('@sparticuz/chromium-min')).default;
+        executablePath = await sparticuz.executablePath();
+        launchArgs = sparticuz.args;
+      } catch {
+        // Not available — fall back to playwright-core default resolution
+      }
+    }
+
     sharedBrowser = await chromium.launch({
       headless: config.playwrightHeadless,
-      executablePath: config.playwrightExecutablePath,
+      executablePath,
       args: launchArgs,
     });
   }

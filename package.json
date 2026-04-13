@@ -25,7 +25,8 @@
     "@kubernetes/client-node": "^1.4.0",
     "cheerio": "^1.0.0",
     "dotenv": "^16.4.5",
-    "playwright": "^1.58.2",
+    "@sparticuz/chromium-min": "^133.0.0",
+    "playwright-core": "^1.52.0",
     "redis": "^4.7.1"
   },
   "devDependencies": {

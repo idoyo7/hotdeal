@@ -9,7 +9,6 @@ if (!pkgPath) {
 }
 
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-delete pkg.dependencies['playwright'];
 delete pkg.dependencies['@kubernetes/client-node'];
 delete pkg.devDependencies;
 delete pkg.scripts;
