@@ -84,13 +84,16 @@ jobs:
           git clone --depth 1 https://x-access-token:${GH_PAT}@github.com/idoyo7/montstrap.git /tmp/montstrap
           cd /tmp/montstrap
 
-          MANIFEST="stage/hotdeal/manifests/deployment.yaml"
+          MANIFEST="stage/hotdeal/manifests/kustomization.yaml"
           if [ ! -f "$MANIFEST" ]; then
-            echo "::error::Manifest not found: $MANIFEST"
+            echo "::error::Kustomization not found: $MANIFEST"
             exit 1
           fi
 
-          sed -i "s|image: docker.io/${IMAGE_NAME}:.*|image: docker.io/${IMAGE_NAME}:${SHORT_SHA}|" "$MANIFEST"
+          # 태그 전용 파일(kustomization images[].newTag)만 bump — deployment.yaml(사람 편집)은 안 건드림
+          yq eval -i "(.images[] | select(.name == \"docker.io/${IMAGE_NAME}\")).newTag = strenv(SHORT_SHA)" "$MANIFEST"
+          echo "=== updated ${MANIFEST} ==="
+          cat "$MANIFEST"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -104,4 +107,9 @@ jobs:
           git commit -m "chore(hotdeal): update image tag to ${SHORT_SHA}
 
           Triggered by idoyo7/hotdeal@${GITHUB_SHA::8}"
+          # 공유 montstrap repo 동시푸시 경합 대비 rebase 재시도 x3
+          for i in 1 2 3; do
+            git push origin main && exit 0
+            git pull --rebase origin main
+          done
           git push origin main
