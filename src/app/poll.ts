@@ -6,7 +6,7 @@ import {
 import type { AppConfig } from '../config.js';
 import type { StateStore } from '../state/types.js';
 import { sendAlerts, type DeliveryResult } from '../notifier.js';
-import { logger } from '../logger.js';
+import { logger, compact } from '../logger.js';
 
 export type PollCycleResult = {
   candidateCount: number;
@@ -208,7 +208,7 @@ export const pollOnce = async (
     if (results.length === 0) {
       await safeUnclaim(post.id);
       failedPostCount += 1;
-      logger.warn('delivery skipped no active notifier target', {
+      logger.warn({
         event: 'delivery.skipped',
         reason: 'no_notifier_target_active',
         retryReleased: true,
@@ -253,18 +253,18 @@ export const pollOnce = async (
 
     anySuccessfulDelivery = true;
     notifiedPostCount += 1;
-    logger.info('delivery sent', {
+    logger.info({
       event: 'delivery.sent',
       post: {
         id: post.id,
         title: post.title,
         link: post.link,
       },
-      delivery: {
+      delivery: compact({
         okCount,
         failCount,
         details: suffix,
-      },
+      }),
       matchedKeywords,
     });
   }

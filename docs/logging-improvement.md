@@ -1,7 +1,22 @@
 # 로깅 개선 노트
 
 작성일: 2026-08-05
-상태: **방향 미결정** — 아래 "결정할 것" 참조
+상태: **1단계(A) 구현 완료** / 2단계(B, pretty) 미착수 — 아래 "결정할 것" 참조
+
+## 1단계 실측 결과 (구현 후)
+
+`CRAWL_MODE=http RUN_ONCE=true`로 실제 1사이클을 돌려 측정했다.
+
+| event | 전 | 후 | 절감 |
+| --- | --- | --- | --- |
+| `monitor.cycle.completed` | 411자 | **114자** | **−72%** |
+| `monitor.startup.notifierTargets` | 178자 | 138자 | −22% |
+| `monitor.poll.options` | — | 188자 | 신규, 기동·전환 시 1회씩만 |
+
+`monitor.cycle.completed`가 예상치(156자)보다 더 줄어든 이유는 카운터가 전부 0인
+사이클에서 `result`가 `{}`로 남기 때문이다. `candidates=1, skipped=1`인 사이클은 156자다.
+
+`result` 키 자체는 비어도 유지한다 — 없어졌다 생겼다 하면 파서·쿼리 쪽이 더 번거롭다.
 
 ## 문제 정의
 
@@ -84,15 +99,21 @@ A만 해도 156자면 터미널 한 줄에 대체로 들어와 실용적으로 �
 
 ## TODO
 
-### 1단계 — 필드 다이어트 (A)
+### 1단계 — 필드 다이어트 (A) — 완료
 
-- [ ] `src/logger.ts`에 0값 필드 생략 옵션 추가 (또는 호출부에서 정리)
-- [ ] `monitor.cycle.completed`에서 `options` 블록 제거
-- [ ] `monitor.cycle.completed`에서 `schedule` 제거하고 `durationMs`로 대체
-- [ ] `message`가 `event`와 동어반복인 호출부 정리
-- [ ] startup 시점 및 startup → steady 전환 시점에 `options` 1회 기록 추가
-- [ ] 다른 event에도 같은 패턴이 있는지 점검 (`monitor.cycle.pipeline`, `delivery.*` 등)
-- [ ] 테스트: 로그 페이로드 스냅샷 검증 추가
+- [x] `src/logger.ts`에 `compact()` 추가 — `0`·`''`·`null`·`undefined` 제거, `false`는 보존
+- [x] `monitor.cycle.completed`에서 `options` 블록 제거
+- [x] `monitor.cycle.completed`에서 `schedule` 제거하고 `durationMs`로 대체
+- [x] `message`가 `event`와 동어반복인 호출부 정리 — **info/warn만**. error는 실패 시 진단
+      가치가 있고 빈도가 낮아 의도적으로 남겼다
+- [x] `monitor.poll.options` 추가 — 옵션 값이 바뀔 때만 기록하므로 기동(`phase: startup`) +
+      startup → steady 전환(`phase: steady`) 2회로 자연히 수렴한다
+- [x] 다른 event 점검 — `delivery.sent`, `lambda.invocation.completed`에도 `compact` 적용
+- [x] 테스트: `tests/logger.test.js`에 6개 추가 (compact 경계값, message 생략,
+      cycle.completed 스냅샷 + 200자 회귀 가드, error message 보존)
+
+`logger.info({...})`처럼 message 없이 fields만 넘기는 호출을 허용하도록 시그니처를
+`string | LogFields`로 확장했다. 기존 `logger.info('msg', {...})` 호출부는 그대로 동작한다.
 
 ### 2단계 — pretty 포맷 (B, 채택 시)
 
@@ -112,10 +133,11 @@ A만 해도 156자면 터미널 한 줄에 대체로 들어와 실용적으로 �
 
 ### 관련 파일
 
-- `src/logger.ts` — JSON 직렬화, 레벨 필터
+- `src/logger.ts` — JSON 직렬화, 레벨 필터, `compact()`
 - `src/config.ts` — `LOG_LEVEL` 파싱 (`LOG_FORMAT` 추가 지점)
-- `src/app/poll.ts` — `monitor.cycle.completed` 호출부
-- `src/entrypoints/k8s.ts` — startup 로그
+- `src/entrypoints/k8s.ts` — startup 로그, `monitor.cycle.completed`·`monitor.poll.options` 호출부
+- `src/app/poll.ts` — `delivery.*`·`stateStore.*` 호출부
+- `src/index.ts` — `entrypoints/k8s.js`를 import하는 3줄 shim (`node dist/index.js`가 실배포 커맨드)
 
 ### 로거 호출 현황
 

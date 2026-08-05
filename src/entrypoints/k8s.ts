@@ -1,6 +1,6 @@
 import { unlinkSync, writeFileSync } from 'node:fs';
 import { getConfig } from '../config.js';
-import { setLogLevel, logger } from '../logger.js';
+import { setLogLevel, logger, compact } from '../logger.js';
 import { closeSharedBrowser } from '../monitor.js';
 import { LeaderElector } from '../leaderElection.js';
 import { createStateStore } from '../state/factory.js';
@@ -62,7 +62,7 @@ const main = async (): Promise<void> => {
     }
     shutdownRequested = true;
     setReadinessMarker(false);
-    logger.info('graceful shutdown requested', {
+    logger.info({
       event: 'monitor.shutdown.requested',
       signal,
     });
@@ -89,7 +89,7 @@ const main = async (): Promise<void> => {
   try {
     const notifierStatus = validateNotifierConfig(config);
 
-    logger.info('notifier targets configured', {
+    logger.info({
       event: 'monitor.startup.notifierTargets',
       targets:
         notifierStatus.selectedTargets.length === 0
@@ -139,6 +139,9 @@ const main = async (): Promise<void> => {
   });
 
   let firstRun = true;
+  // 폴링 옵션은 정적이라 매 사이클 로그에 싣지 않고, 값이 바뀔 때만 1줄 남긴다.
+  // startup(5p/120i) → steady(1p/30i) 전환이 유일한 변화 지점이다.
+  let lastPollOptionsKey: string | undefined;
   try {
     while (true) {
       if (shutdownRequested) {
@@ -159,22 +162,32 @@ const main = async (): Promise<void> => {
         ? Math.max(1, config.startupMaxItemsPerPoll)
         : Math.max(1, config.maxItemsPerPoll);
 
-      const cycleStartedAt = new Date();
+      const pollOptions = {
+        intervalMs: config.requestIntervalMs,
+        maxPagesPerPoll,
+        maxItemsPerPoll,
+        pollOnce: config.pollOnce,
+      };
+      const pollOptionsKey = JSON.stringify(pollOptions);
+      if (pollOptionsKey !== lastPollOptionsKey) {
+        logger.info({
+          event: 'monitor.poll.options',
+          phase: lastPollOptionsKey === undefined ? 'startup' : 'steady',
+          options: pollOptions,
+        });
+        lastPollOptionsKey = pollOptionsKey;
+      }
+
+      const cycleStartedAt = Date.now();
       const cycleResult = await pollOnce(config, store, {
         maxPagesPerPoll,
         maxItemsPerPoll,
       });
       firstRun = false;
 
-      const nextRunAt = config.pollOnce
-        ? 'none'
-        : new Date(
-            cycleStartedAt.getTime() + config.requestIntervalMs
-          ).toISOString();
-
-      logger.info('monitor cycle run', {
+      logger.info({
         event: 'monitor.cycle.completed',
-        result: {
+        result: compact({
           candidates: cycleResult.candidateCount,
           fresh: cycleResult.freshCount,
           notified: cycleResult.notifiedPostCount,
@@ -182,17 +195,8 @@ const main = async (): Promise<void> => {
           failed: cycleResult.failedPostCount,
           skippedAlreadyProcessed: cycleResult.skippedAlreadyProcessedCount,
           stateCheckFailed: cycleResult.stateCheckFailedCount,
-        },
-        options: {
-          intervalMs: config.requestIntervalMs,
-          maxPagesPerPoll,
-          maxItemsPerPoll,
-          pollOnce: config.pollOnce,
-        },
-        schedule: {
-          runAt: cycleStartedAt.toISOString(),
-          nextRunAt,
-        },
+        }),
+        durationMs: Date.now() - cycleStartedAt,
       });
 
       if (config.pollOnce) {
