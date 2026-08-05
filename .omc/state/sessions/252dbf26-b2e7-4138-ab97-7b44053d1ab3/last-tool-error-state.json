@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"echo \\\"=== DRY_RUN in .env ===\\\"; grep -E \\\"^(DRY_RUN|RUN_ONCE|USE_FILE_STATE)=\\\" .env; echo; echo \\\"=== lambda env wiring ===\\\"; grep -rn \\\"TELEGRAM\\\\|SLACK\\\\|Environment\\\" --include=*.ya...",
+  "error": "Exit code 1\n=== DRY_RUN in .env ===\nUSE_FILE_STATE=false\nRUN_ONCE=false\nDRY_RUN=false\n\n=== lambda env wiring ===\n(eval):1: no matches found: --include=*.yaml\n(eval):1: no matches found: lambda*",
+  "timestamp": "2026-08-05T14:10:10.483Z",
+  "retry_count": 1
+}

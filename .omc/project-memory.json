@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1775450903931,
+  "lastScanned": 1785938834823,
   "projectRoot": "/Users/mont/evejuni/hotdeal",
   "techStack": {
     "languages": [
@@ -21,13 +21,7 @@
         ]
       }
     ],
-    "frameworks": [
-      {
-        "name": "playwright",
-        "version": "1.58.2",
-        "category": "testing"
-      }
-    ],
+    "frameworks": [],
     "packageManager": "npm",
     "runtime": "Node.js 20.0.0"
   },
@@ -39,6 +33,7 @@
     "scripts": {
       "build": "tsc -p tsconfig.json",
       "start": "node dist/index.js",
+      "start:k8s": "node dist/entrypoints/k8s.js",
       "dev": "tsx watch src/index.ts",
       "run:local": "bash scripts/run-local.sh",
       "run:once:local": "bash scripts/run-keyword-once-local.sh",
@@ -72,7 +67,7 @@
       "path": "config",
       "purpose": "Configuration files",
       "fileCount": 2,
-      "lastAccessed": 1775450903914,
+      "lastAccessed": 1785938834802,
       "keyFiles": [
         "chatid",
         "telegram"
@@ -82,7 +77,7 @@
       "path": "dist",
       "purpose": "Distribution/build output",
       "fileCount": 8,
-      "lastAccessed": 1775450903916,
+      "lastAccessed": 1785938834803,
       "keyFiles": [
         "config.js",
         "index.js",
@@ -94,17 +89,29 @@
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
-      "fileCount": 1,
-      "lastAccessed": 1775450903925,
+      "fileCount": 4,
+      "lastAccessed": 1785938834807,
       "keyFiles": [
+        "lambda-deploy.md",
+        "lambda-playwright-deploy.md",
+        "lambda-playwright-zip-min-spec.md",
         "runtime-behavior.md"
+      ]
+    },
+    "infra": {
+      "path": "infra",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1785938834809,
+      "keyFiles": [
+        "cloudformation.yaml"
       ]
     },
     "k8s": {
       "path": "k8s",
       "purpose": null,
       "fileCount": 8,
-      "lastAccessed": 1775450903926,
+      "lastAccessed": 1785938834811,
       "keyFiles": [
         "configmap.yaml",
         "deployment-with-file-state.yaml",
@@ -117,7 +124,7 @@
       "path": "logs",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1775450903927,
+      "lastAccessed": 1785938834811,
       "keyFiles": [
         "sambdasu-batch.log",
         "sambdasu-batch.pid"
@@ -126,21 +133,21 @@
     "scripts": {
       "path": "scripts",
       "purpose": "Build/utility scripts",
-      "fileCount": 11,
-      "lastAccessed": 1775450903927,
+      "fileCount": 14,
+      "lastAccessed": 1785938834811,
       "keyFiles": [
         "apply-k8s-from-config.sh",
-        "run-docker.sh",
-        "run-jejusamdau-batch.sh",
-        "run-keyword-once-docker.sh",
-        "run-keyword-once-local.sh"
+        "deploy-lambda-playwright.sh",
+        "deploy-lambda.sh",
+        "prepare-lambda-package.cjs",
+        "run-docker.sh"
       ]
     },
     "src": {
       "path": "src",
       "purpose": "Source code",
-      "fileCount": 8,
-      "lastAccessed": 1775450903927,
+      "fileCount": 7,
+      "lastAccessed": 1785938834812,
       "keyFiles": [
         "config.ts",
         "index.ts",
@@ -152,45 +159,42 @@
     "tests": {
       "path": "tests",
       "purpose": "Test files",
-      "fileCount": 4,
-      "lastAccessed": 1775450903927,
+      "fileCount": 9,
+      "lastAccessed": 1785938834812,
       "keyFiles": [
         "config.test.js",
+        "configBackend.test.js",
+        "lambda.test.js",
         "logger.test.js",
-        "monitor.test.js",
-        "notifier.test.js"
+        "monitor.test.js"
+      ]
+    },
+    "dist/app": {
+      "path": "dist/app",
+      "purpose": "Application code",
+      "fileCount": 2,
+      "lastAccessed": 1785938834815,
+      "keyFiles": [
+        "poll.js",
+        "validateNotifierConfig.js"
+      ]
+    },
+    "src/app": {
+      "path": "src/app",
+      "purpose": "Application code",
+      "fileCount": 2,
+      "lastAccessed": 1785938834822,
+      "keyFiles": [
+        "poll.ts",
+        "validateNotifierConfig.ts"
       ]
     }
   },
   "hotPaths": [
     {
-      "path": "src/monitor.ts",
-      "accessCount": 16,
-      "lastAccessed": 1775451564909,
-      "type": "file"
-    },
-    {
-      "path": "src/index.ts",
-      "accessCount": 8,
-      "lastAccessed": 1775451440354,
-      "type": "file"
-    },
-    {
-      "path": "src/notifier.ts",
-      "accessCount": 8,
-      "lastAccessed": 1775451501552,
-      "type": "file"
-    },
-    {
       "path": "src/config.ts",
-      "accessCount": 4,
-      "lastAccessed": 1775451021666,
-      "type": "file"
-    },
-    {
-      "path": "src/stateStore.ts",
-      "accessCount": 2,
-      "lastAccessed": 1775451467213,
+      "accessCount": 1,
+      "lastAccessed": 1785938894534,
       "type": "file"
     }
   ],
