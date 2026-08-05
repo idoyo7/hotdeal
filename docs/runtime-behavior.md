@@ -45,7 +45,7 @@
 여러 Pod가 떠도 리더만 폴링 루프를 실행합니다.
 리더 장애 시 lease 만료 후 다른 Pod가 승계합니다.
 
-필요 RBAC은 `k8s/rbac.yaml`에 포함되어 있습니다.
+필요 RBAC은 배포 저장소(`idoyo7/montstrap`)의 `stage/hotdeal/manifests/rbac.yaml`에 포함되어 있습니다.
 
 ## 5) 차단(anti-bot) 대응
 

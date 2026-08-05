@@ -131,49 +131,41 @@ Slack 또는 Telegram 둘 다 설정하면 둘 다 전송됩니다.
 
 ## Kubernetes 배포
 
-### 1) Redis + Leader Election 모드(권장)
+**이 저장소에는 배포 매니페스트가 없습니다.** K8s 형상은 ArgoCD가 관리하는 별도 저장소에 있습니다.
 
-아래 스크립트는 Redis 상태 저장 + Lease 기반 leader election 구성을 함께 배포합니다.
+| 항목 | 값 |
+| --- | --- |
+| 매니페스트 저장소 | `idoyo7/montstrap` |
+| 경로 | `stage/hotdeal/manifests/` |
+| ArgoCD Application | `hotdeal` (namespace `argocd`) |
+| 배포 네임스페이스 | `hotdeal` |
+| 동기화 정책 | `automated` + `selfHeal` + `prune` |
+
+구성은 Redis 상태 저장 + Lease 기반 leader election입니다.
 Redis TTL(기본 7일) 동안 중복 상태가 유지되며, 다중 Pod에서도 리더 1개만 폴링을 수행합니다.
 
-```bash
-bash scripts/apply-k8s-from-config.sh
-```
+### 설정 변경 방법
 
-스크립트는 `config/telegram`, `config/telegram.env`, `config/chatid`, `config/slack*` 값을 읽어
-`fmkorea-hotdeal-monitor-secret`을 생성/업데이트한 뒤
-`redis.yaml -> rbac.yaml -> configmap.yaml -> deployment.yaml` 순서로 apply 합니다.
+`ALERT_KEYWORDS` 같은 런타임 설정은 montstrap의 `stage/hotdeal/manifests/configmap.yaml`을 수정하고
+`main`에 push하면 ArgoCD가 자동 동기화합니다.
 
-네임스페이스를 지정하려면 아래처럼 실행하세요.
+Deployment에 `reloader.stakater.com/auto: "true"`가 붙어 있어 ConfigMap/Secret이 바뀌면
+Reloader가 자동으로 롤아웃합니다. `envFrom`으로 주입되는 환경변수는 파드 기동 시 1회만 읽히므로
+이 애노테이션이 없으면 ConfigMap만 바꿔서는 반영되지 않습니다.
 
-```bash
-bash scripts/apply-k8s-from-config.sh --namespace hotdeal
-```
+### 이미지 태그
 
-`k8s/configmap.yaml`의 `ALERT_KEYWORDS`를 운영 목적에 맞게 수정하세요.
-`k8s/redis.yaml`은 Redis를 StatefulSet + PVC로 배포합니다.
-버전/호환성 관리를 위해 annotation(`component-version`, `compat-major`)을 넣어두었고, `updateStrategy: OnDelete`로 설정되어 있어 이미지 태그/annotation 변경만으로는 자동 재시작되지 않습니다.
-즉 메이저 호환 정책 안에서 버전 값을 올리더라도 운영자가 Pod를 명시적으로 재시작하기 전까지는 기존 Redis 인스턴스를 계속 사용합니다.
+`main` push마다 `.github/workflows/ci.yml`이 이미지를 빌드해 Docker Hub에 올리고,
+montstrap의 `kustomization.yaml`에 있는 `images[].newTag`를 6자리 SHA로 bump합니다.
+매니페스트에 태그를 직접 적지 않습니다.
 
-### 2) 파일 상태 저장 모드(선택)
+### Redis 재시작 정책
 
-중복 감지 상태를 컨테이너 재시작 간 유지하고 싶으면 파일 기반 상태 모드로 배포하세요.
-
-```bash
-bash scripts/apply-k8s-from-config.sh --file-state
-```
-
-실제 적용 없이 검증만 하려면 dry-run을 사용할 수 있습니다.
-
-```bash
-bash scripts/apply-k8s-from-config.sh --dry-run
-```
-
-운영에서 `CONFIG` 기준으로 `USE_FILE_STATE=true`를 보장하면 됩니다.
-`deployment-with-file-state.yaml`은 Redis 대신 파일 상태 저장을 쓰도록 `USE_REDIS_STATE=false`를 고정합니다.
-
-`deployment.yaml`의 이미지 태그(`docker.io/montkim9/fmkorea-hotdeal-monitor:latest`)는
-실제 레포지토리 경로에 맞게 수정하세요.
+`redis.yaml`은 Redis를 StatefulSet + PVC로 배포합니다.
+버전/호환성 관리를 위해 annotation(`component-version`, `compat-major`)을 넣어두었고,
+`updateStrategy: OnDelete`로 설정되어 있어 이미지 태그/annotation 변경만으로는 자동 재시작되지 않습니다.
+즉 메이저 호환 정책 안에서 버전 값을 올리더라도 운영자가 Pod를 명시적으로 재시작하기 전까지는
+기존 Redis 인스턴스를 계속 사용합니다.
 
 `latest` 태그를 사용할 때는 `imagePullPolicy: Always`로 설정되어 있어 매 배포 시 최신 이미지를 pull 합니다.
 

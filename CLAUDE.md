@@ -48,5 +48,5 @@ ESM (`"type": "module"`) 프로젝트. TypeScript 소스는 `src/`, 빌드 출�
 ## Deployment
 
 - Docker: `node:22-bookworm-slim` 기반, 시스템 Chromium 사용 (`PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium`)
-- K8s: `scripts/apply-k8s-from-config.sh`로 배포. `config/` 디렉토리에서 시크릿 값 읽음.
+- K8s: 이 저장소에 매니페스트 없음. `idoyo7/montstrap`의 `stage/hotdeal/manifests/`를 ArgoCD가 auto-sync(`selfHeal`+`prune`)로 배포. 설정 변경은 거기서 하고 `main`에 push. Deployment에 `reloader.stakater.com/auto`가 붙어 ConfigMap 변경 시 자동 롤아웃됨.
 - CI: GitHub Actions, `main` push 시 Docker Hub에 `montkim9/fmkorea-hotdeal-monitor` 이미지 push
