@@ -192,6 +192,42 @@
   },
   "hotPaths": [
     {
+      "path": "src/entrypoints/k8s.ts",
+      "accessCount": 6,
+      "lastAccessed": 1785940176538,
+      "type": "file"
+    },
+    {
+      "path": "src/logger.ts",
+      "accessCount": 4,
+      "lastAccessed": 1785940145382,
+      "type": "file"
+    },
+    {
+      "path": "src/app/poll.ts",
+      "accessCount": 4,
+      "lastAccessed": 1785940188526,
+      "type": "file"
+    },
+    {
+      "path": "src/entrypoints/lambda.ts",
+      "accessCount": 4,
+      "lastAccessed": 1785940197276,
+      "type": "file"
+    },
+    {
+      "path": "tests/logger.test.js",
+      "accessCount": 4,
+      "lastAccessed": 1785940236554,
+      "type": "file"
+    },
+    {
+      "path": "docs/logging-improvement.md",
+      "accessCount": 4,
+      "lastAccessed": 1785940373490,
+      "type": "file"
+    },
+    {
       "path": "src/config.ts",
       "accessCount": 1,
       "lastAccessed": 1785938894534,
