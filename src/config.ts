@@ -1,6 +1,34 @@
 import { config as loadEnv } from 'dotenv';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
+// 1. .env (기본)
 loadEnv();
+
+// 2. config/*.env 파일 (KEY=VALUE 형식, 비밀값 등)
+try {
+  const configDir = join(process.cwd(), 'config');
+  for (const file of readdirSync(configDir).filter((f) => f.endsWith('.env'))) {
+    loadEnv({ path: join(configDir, file) });
+  }
+} catch {
+  // config/ 디렉토리 없으면 skip
+}
+
+// 3. config/ 단일값 파일 (레거시: telegram, chatid, slack 등)
+const loadConfigFile = (fileName: string, envKey: string): void => {
+  if (process.env[envKey]) return;
+  try {
+    const value = readFileSync(join(process.cwd(), 'config', fileName), 'utf8').trim();
+    if (value) process.env[envKey] = value;
+  } catch {
+    // 파일 없으면 skip
+  }
+};
+
+loadConfigFile('telegram', 'TELEGRAM_BOT_TOKEN');
+loadConfigFile('chatid', 'TELEGRAM_CHAT_ID');
+loadConfigFile('slack', 'SLACK_WEBHOOK_URL');
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 

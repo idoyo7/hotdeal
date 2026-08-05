@@ -107,6 +107,77 @@ test('fetchLatestPosts prefers descriptive title over vote-count anchor for same
 
     assert.strictEqual(posts.length, 1);
     assert.strictEqual(posts[0].title, '제주삼다수 그린 무라벨 2L 18개 [58]');
+    assert.strictEqual(posts[0].link, 'https://www.fmkorea.com/9564843258');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchLatestPosts treats plain and trending FMKorea URLs as the same post', async () => {
+  const originalFetch = globalThis.fetch;
+  const html = `
+    <html><body>
+      <a href="https://www.fmkorea.com/9695144650">추천 6</a>
+      <a href="https://www.fmkorea.com/index.php?mid=hotdeal&sort_index=pop&order_type=desc&document_srl=9695144650&listStyle=webzine">기글 특가 원문 제목</a>
+    </body></html>
+  `;
+
+  globalThis.fetch = async () => new Response(html, { status: 200 });
+
+  try {
+    const posts = await fetchLatestPosts({
+      boardUrl: 'https://www.fmkorea.com/index.php?mid=hotdeal&page=2',
+      boardUrls: ['https://www.fmkorea.com/index.php?mid=hotdeal&page=2'],
+      crawlMode: 'http',
+      requestIntervalMs: 1000,
+      requestTimeoutMs: 5000,
+      maxPagesPerPoll: 1,
+      maxItemsPerPoll: 30,
+      startupMaxPagesPerPoll: 1,
+      startupMaxItemsPerPoll: 30,
+      seenStateFile: './seen.json',
+      useFileState: false,
+      useRedisState: false,
+      redisUrl: undefined,
+      redisKeyPrefix: 'hotdeal:seen:',
+      redisTtlSeconds: 604800,
+      stateBackend: 'memory',
+      dynamoTableName: 'hotdeal-seen-posts',
+      dynamoTtlSeconds: 604800,
+      dynamoRegion: undefined,
+      leaderElectionEnabled: false,
+      leaderElectionLeaseName: 'test',
+      leaderElectionNamespace: 'default',
+      leaderElectionIdentity: 'test-pod',
+      leaderElectionLeaseDurationSeconds: 45,
+      leaderElectionRenewIntervalMs: 10000,
+      logLevel: 'info',
+      pollOnce: true,
+      userAgent: 'test-agent',
+      playwrightWsEndpoint: undefined,
+      playwrightExecutablePath: undefined,
+      playwrightHeadless: true,
+      playwrightNavigationTimeoutMs: 15000,
+      playwrightWaitAfterLoadMs: 1500,
+      postSelector: undefined,
+      linkSelector: undefined,
+      titleSelector: undefined,
+      enableLegacyDomFallbackScrape: false,
+      keywords: ['기글'],
+      notifier: {
+        slackWebhookUrl: undefined,
+        telegramBotToken: undefined,
+        telegramChatId: undefined,
+        discordWebhookUrl: undefined,
+        targets: [],
+        dryRun: true,
+      },
+    });
+
+    assert.strictEqual(posts.length, 1);
+    assert.strictEqual(posts[0].id, 'fmkorea-post:9695144650');
+    assert.strictEqual(posts[0].title, '기글 특가 원문 제목');
+    assert.strictEqual(posts[0].link, 'https://www.fmkorea.com/9695144650');
   } finally {
     globalThis.fetch = originalFetch;
   }
