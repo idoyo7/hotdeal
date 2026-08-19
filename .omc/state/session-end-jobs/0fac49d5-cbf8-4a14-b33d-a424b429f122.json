@@ -1,0 +1,328 @@
+{
+  "version": 1,
+  "jobId": "049ecb1b-196b-4d40-8f3d-2e58cfeb45fc",
+  "sessionId": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+  "scopeKey": "34405b6800a52a94b95d4743c2efc0986bcda09bfba182785d82ad61e64af6ce",
+  "revision": 41,
+  "createdAt": "2026-08-05T14:18:39.758Z",
+  "updatedAt": "2026-08-05T14:18:41.045Z",
+  "producerGraceExpiresAt": "2026-08-05T14:19:09.759Z",
+  "bestEffortDeadlineAt": "2026-08-05T14:20:00.759Z",
+  "producers": {
+    "core": {
+      "state": "sealed",
+      "intentKey": "ae32d4cec628a36c7f7a44739b9a8216ed6f1ac1dc201b839c8d25850604dbcc",
+      "payloadDigest": "ae32d4cec628a36c7f7a44739b9a8216ed6f1ac1dc201b839c8d25850604dbcc",
+      "sealedAt": "2026-08-05T14:18:39.802Z",
+      "sealedBy": "foreground"
+    },
+    "wiki": {
+      "state": "no-op",
+      "sealedAt": "2026-08-05T14:18:39.758Z",
+      "sealedBy": "wiki-producer"
+    }
+  },
+  "actions": {
+    "foreground-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 0,
+      "idempotencyKey": "febf6dba2f2536433960a07f7cedce72e946b43ced0896570df80f017b8914d2",
+      "payload": {
+        "transcriptPath": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+        "cwd": "/Users/mont/evejuni/hotdeal",
+        "reason": "other",
+        "input": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "transcript_path": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+          "cwd": "/Users/mont/evejuni/hotdeal",
+          "prompt_id": "6fd6235e-23fd-471c-aa84-09e6f19692e4",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "metrics": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "ended_at": "2026-08-05T14:18:39.757Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {},
+        "foregroundResult": {
+          "removedTransientFiles": 0,
+          "completedAt": "2026-08-05T14:18:39.802Z"
+        }
+      },
+      "budgetMs": 9000,
+      "completedAt": "2026-08-05T14:18:39.802Z",
+      "lastOutcomeCode": "completed"
+    },
+    "wiki-capture": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 0,
+      "idempotencyKey": "1719cd1ef5b51e0269b78c4cb8c9308c9c1f7b82fd1c067fc034c060f23863f5",
+      "payload": {},
+      "budgetMs": 9000,
+      "completedAt": "2026-08-05T14:18:39.758Z"
+    },
+    "team-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "cee6ac31df545408e1e822247ac249b3f8182a98a5fe8e448ae3b251e55bdee1",
+      "payload": {
+        "transcriptPath": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+        "cwd": "/Users/mont/evejuni/hotdeal",
+        "reason": "other",
+        "input": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "transcript_path": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+          "cwd": "/Users/mont/evejuni/hotdeal",
+          "prompt_id": "6fd6235e-23fd-471c-aa84-09e6f19692e4",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "metrics": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "ended_at": "2026-08-05T14:18:39.757Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {}
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-08-05T14:18:39.889Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "b9f76a90-4fff-4102-b1d9-9b7c20071077",
+        "phase": "terminal",
+        "deadlineAt": "2026-08-05T14:18:49.860Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-08-05T14:18:40.060Z"
+    },
+    "python-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "1f1370c4ac056606059d517e2f106b602d8cbcb04587b3fcc5f3b9f89e649cd0",
+      "payload": {
+        "transcriptPath": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+        "cwd": "/Users/mont/evejuni/hotdeal",
+        "reason": "other",
+        "input": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "transcript_path": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+          "cwd": "/Users/mont/evejuni/hotdeal",
+          "prompt_id": "6fd6235e-23fd-471c-aa84-09e6f19692e4",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "metrics": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "ended_at": "2026-08-05T14:18:39.757Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {}
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-08-05T14:18:40.079Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "d758ea7c-a51a-47f8-9bf9-6f1226f6c34e",
+        "phase": "terminal",
+        "deadlineAt": "2026-08-05T14:18:49.860Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-08-05T14:18:40.260Z"
+    },
+    "reply-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "0b3a8b47c28b26d56aca004d4f572b96c118f16819c0d35162418816f9a5420a",
+      "payload": {
+        "transcriptPath": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+        "cwd": "/Users/mont/evejuni/hotdeal",
+        "reason": "other",
+        "input": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "transcript_path": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+          "cwd": "/Users/mont/evejuni/hotdeal",
+          "prompt_id": "6fd6235e-23fd-471c-aa84-09e6f19692e4",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "metrics": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "ended_at": "2026-08-05T14:18:39.757Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {}
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-08-05T14:18:40.279Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "e7407580-7b2c-4f65-8237-4e7859ce3d18",
+        "phase": "terminal",
+        "deadlineAt": "2026-08-05T14:18:49.860Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-08-05T14:18:40.450Z"
+    },
+    "callback": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "d068ede2655bf89e0c0950e087d0603d7dcf45538e94f20a654d08c6f4841895",
+      "payload": {
+        "transcriptPath": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+        "cwd": "/Users/mont/evejuni/hotdeal",
+        "reason": "other",
+        "input": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "transcript_path": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+          "cwd": "/Users/mont/evejuni/hotdeal",
+          "prompt_id": "6fd6235e-23fd-471c-aa84-09e6f19692e4",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "metrics": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "ended_at": "2026-08-05T14:18:39.757Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {}
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-08-05T14:18:40.467Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "dd52239e-7482-4a1f-b3eb-7fc11e59e87f",
+        "phase": "terminal",
+        "deadlineAt": "2026-08-05T14:18:49.860Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-08-05T14:18:40.635Z"
+    },
+    "notification": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "89c0438ff63097ce04beb60efb87292ff68a7af350a0ee331f3de9dbf42d62fc",
+      "payload": {
+        "transcriptPath": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+        "cwd": "/Users/mont/evejuni/hotdeal",
+        "reason": "other",
+        "input": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "transcript_path": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+          "cwd": "/Users/mont/evejuni/hotdeal",
+          "prompt_id": "6fd6235e-23fd-471c-aa84-09e6f19692e4",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "metrics": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "ended_at": "2026-08-05T14:18:39.757Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {}
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-08-05T14:18:40.652Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "839f7976-2520-4980-bcae-4a15a5834c9d",
+        "phase": "terminal",
+        "deadlineAt": "2026-08-05T14:18:49.860Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-08-05T14:18:40.818Z"
+    },
+    "openclaw": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "31fe8f6e1cf204e27006de511df257326fdd98655122ca437013e8779ffc735b",
+      "payload": {
+        "transcriptPath": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+        "cwd": "/Users/mont/evejuni/hotdeal",
+        "reason": "other",
+        "input": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "transcript_path": "/Users/mont/.claude/projects/-Users-mont-evejuni-hotdeal/0fac49d5-cbf8-4a14-b33d-a424b429f122.jsonl",
+          "cwd": "/Users/mont/evejuni/hotdeal",
+          "prompt_id": "6fd6235e-23fd-471c-aa84-09e6f19692e4",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "metrics": {
+          "session_id": "0fac49d5-cbf8-4a14-b33d-a424b429f122",
+          "ended_at": "2026-08-05T14:18:39.757Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {}
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-08-05T14:18:40.838Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "7d80131a-0507-4323-8acc-3241fc4ad2bb",
+        "phase": "terminal",
+        "deadlineAt": "2026-08-05T14:18:49.860Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-08-05T14:18:41.007Z"
+    }
+  },
+  "owner": null,
+  "phase": "complete",
+  "completion": {
+    "completedAt": "2026-08-05T14:18:41.026Z",
+    "terminalDigest": "3306d36781a292641aa2a5dde040226982a504726fe66e1d132f236a326c8f1b",
+    "terminalRevision": 40
+  }
+}

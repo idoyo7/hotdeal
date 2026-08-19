@@ -1,0 +1,22 @@
+{"t":0,"agent":"a2ef172","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a2ef172","agent_type":"untracked-native-fork","event":"agent_stop","success":true,"synthetic":true,"telemetry_status":"unmatched_stop","reason":"SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."}
+{"t":0,"agent":"a0b1322","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a0b1322","agent_type":"untracked-native-fork","event":"agent_stop","success":true,"synthetic":true,"telemetry_status":"unmatched_stop","reason":"SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."}
+{"t":0,"agent":"a0b1322","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a0b1322","agent_type":"untracked-native-fork","event":"agent_stop","success":true,"duration_ms":21169,"synthetic":true,"telemetry_status":"unmatched_stop","reason":"SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."}
+{"t":0,"agent":"a0b1322","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a0b1322","agent_type":"untracked-native-fork","event":"agent_stop","success":true,"duration_ms":35693,"synthetic":true,"telemetry_status":"unmatched_stop","reason":"SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."}
+{"t":0,"agent":"a0b1322","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a0b1322","agent_type":"untracked-native-fork","event":"agent_stop","success":true,"duration_ms":38849,"synthetic":true,"telemetry_status":"unmatched_stop","reason":"SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."}
+{"t":0,"agent":"a0b1322","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a0b1322","agent_type":"untracked-native-fork","event":"agent_stop","success":true,"duration_ms":51894,"synthetic":true,"telemetry_status":"unmatched_stop","reason":"SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."}
+{"t":0,"agent":"a0b1322","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a0b1322","agent_type":"untracked-native-fork","event":"agent_stop","success":true,"duration_ms":56295,"synthetic":true,"telemetry_status":"unmatched_stop","reason":"SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."}
+{"t":0,"agent":"a72fe57","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a72fe57","agent_type":"untracked-native-fork","event":"agent_stop","success":true,"synthetic":true,"telemetry_status":"unmatched_stop","reason":"SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."}
+{"t":0,"agent":"a72fe57","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a72fe57","agent_type":"untracked-native-fork","event":"agent_stop","success":true,"duration_ms":21324,"synthetic":true,"telemetry_status":"unmatched_stop","reason":"SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."}
+{"t":0,"agent":"a72fe57","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a72fe57","agent_type":"untracked-native-fork","event":"agent_stop","success":true,"duration_ms":29839,"synthetic":true,"telemetry_status":"unmatched_stop","reason":"SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."}
+{"t":0,"agent":"a72fe57","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a72fe57","agent_type":"untracked-native-fork","event":"agent_stop","success":true,"duration_ms":33882,"synthetic":true,"telemetry_status":"unmatched_stop","reason":"SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."}

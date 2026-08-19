@@ -1,5 +1,5 @@
 import { getConfig } from '../config.js';
-import { setLogLevel, logger } from '../logger.js';
+import { setLogLevel, logger, compact } from '../logger.js';
 import { closeSharedBrowser } from '../monitor.js';
 import { createStateStore } from '../state/factory.js';
 import { pollOnce, type PollCycleResult } from '../app/poll.js';
@@ -14,7 +14,7 @@ export const handler = async (_event: unknown): Promise<LambdaResponse> => {
   const config = getConfig();
   setLogLevel(config.logLevel);
 
-  logger.info('lambda invocation started', {
+  logger.info({
     event: 'lambda.invocation.started',
     stateBackend: config.stateBackend,
     crawlMode: config.crawlMode,
@@ -34,9 +34,9 @@ export const handler = async (_event: unknown): Promise<LambdaResponse> => {
     await store.close();
   }
 
-  logger.info('lambda invocation completed', {
+  logger.info({
     event: 'lambda.invocation.completed',
-    result: {
+    result: compact({
       candidates: result.candidateCount,
       fresh: result.freshCount,
       notified: result.notifiedPostCount,
@@ -44,7 +44,7 @@ export const handler = async (_event: unknown): Promise<LambdaResponse> => {
       failed: result.failedPostCount,
       skippedAlreadyProcessed: result.skippedAlreadyProcessedCount,
       stateCheckFailed: result.stateCheckFailedCount,
-    },
+    }),
   });
 
   return {
