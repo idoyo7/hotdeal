@@ -84,7 +84,7 @@ jobs:
           git clone --depth 1 https://x-access-token:${GH_PAT}@github.com/idoyo7/montstrap.git /tmp/montstrap
           cd /tmp/montstrap
 
-          MANIFEST="stage/hotdeal/manifests/kustomization.yaml"
+          MANIFEST="hub/hotdeal/manifests/kustomization.yaml"
           if [ ! -f "$MANIFEST" ]; then
             echo "::error::Kustomization not found: $MANIFEST"
             exit 1
