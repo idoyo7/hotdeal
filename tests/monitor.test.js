@@ -555,7 +555,10 @@ test('fetchLatestPosts still treats a genuine anti-bot page as blocked', async (
   }
 });
 
-test('fetchLatestPosts distributes the shared per-poll cap evenly and includes all boards', async () => {
+const countByLinkPrefix = (posts, prefix) =>
+  posts.filter((post) => post.link.includes(`fmkorea.com/${prefix}`)).length;
+
+test('fetchLatestPosts round-robins the shared per-poll cap so equal boards split evenly', async () => {
   const originalFetch = globalThis.fetch;
   const boardUrls = [
     'https://www.fmkorea.com/index.php?mid=board1',
@@ -578,26 +581,24 @@ test('fetchLatestPosts distributes the shared per-poll cap evenly and includes a
     const config = baseTestConfig(boardUrls, { maxItemsPerPoll: 30 });
     const { captured, result: posts } = await captureLog(() => fetchLatestPosts(config));
 
-    assert.ok(posts.length <= 30, `총합이 상한(30) 이하여야 한다 (실측 ${posts.length})`);
-
-    const countByBoard = (prefix) =>
-      posts.filter((post) => post.link.includes(`fmkorea.com/${prefix}`)).length;
-    assert.ok(countByBoard('1') > 0, '보드1 게시글이 최소 1건 섞여야 한다');
-    assert.ok(countByBoard('2') > 0, '보드2 게시글이 최소 1건 섞여야 한다');
-    assert.ok(countByBoard('3') > 0, '보드3 게시글이 최소 1건 섞여야 한다');
+    assert.strictEqual(posts.length, 30);
+    assert.strictEqual(countByLinkPrefix(posts, '1'), 10, '보드1이 정확히 10건이어야 한다');
+    assert.strictEqual(countByLinkPrefix(posts, '2'), 10, '보드2가 정확히 10건이어야 한다');
+    assert.strictEqual(countByLinkPrefix(posts, '3'), 10, '보드3이 정확히 10건이어야 한다');
 
     const truncated = parsedLogs(captured).filter(
       (entry) => entry.event === 'monitor.fetch.truncated'
     );
     assert.strictEqual(truncated.length, 1);
     assert.strictEqual(truncated[0].limit, 30);
-    assert.ok(truncated[0].collected >= 30);
+    assert.strictEqual(truncated[0].collected, 120);
+    assert.strictEqual(truncated[0].dropped, 90);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('fetchLatestPosts lets a later board use the slots an earlier board could not fill', async () => {
+test('fetchLatestPosts lets later boards use the slots an earlier board could not fill', async () => {
   const originalFetch = globalThis.fetch;
   const boardUrls = [
     'https://www.fmkorea.com/index.php?mid=board1',
@@ -620,6 +621,55 @@ test('fetchLatestPosts lets a later board use the slots an earlier board could n
     const config = baseTestConfig(boardUrls, { maxItemsPerPoll: 30 });
     const posts = await fetchLatestPosts(config);
     assert.strictEqual(posts.length, 30, '보드1이 못 채운 슬롯을 뒤 보드가 채워 총 30건이어야 한다');
+    assert.strictEqual(
+      countByLinkPrefix(posts, '1'),
+      5,
+      '보드1의 5건은 상한 계산과 무관하게 전부 포함돼야 한다'
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// 프로덕션 회귀: m.fmkorea.com/hotdeal(22건) + www.fmkorea.com/hotdeal(8건) +
+// 먹거리 카테고리(0건), limit=30 에서 순차 하드컷(ceil(30/3)=10)이 보드1을
+// 22건 중 10건으로 잘라 12건을 근거 없이 버렸다. collected(30)==limit(30)인데
+// dropped=12 가 나온 사고였다 — 라운드로빈으로 두 보드의 수확분이 전부 살아야 한다.
+test('fetchLatestPosts does not drop posts when total collected already fits under the limit', async () => {
+  const originalFetch = globalThis.fetch;
+  const boardUrls = [
+    'https://m.fmkorea.com/hotdeal',
+    'https://www.fmkorea.com/hotdeal',
+    'https://www.fmkorea.com/index.php?mid=hotdeal&category=1196844726',
+  ];
+
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes('category=1196844726')) {
+      return new Response('<html><body>no posts here</body></html>', { status: 200 });
+    }
+    if (target.startsWith('https://m.fmkorea.com/hotdeal')) {
+      return new Response(makeBoardHtml(1000000, 22, '모바일보드'), { status: 200 });
+    }
+    return new Response(makeBoardHtml(2000000, 8, '데스크톱보드'), { status: 200 });
+  };
+
+  try {
+    const config = baseTestConfig(boardUrls, { maxItemsPerPoll: 30 });
+    const { captured, result: posts } = await captureLog(() => fetchLatestPosts(config));
+
+    assert.strictEqual(posts.length, 30, '수확한 22+8건이 상한 30 안에 다 들어가야 한다');
+    assert.strictEqual(countByLinkPrefix(posts, '1'), 22, '보드1의 22건이 전부 살아야 한다');
+    assert.strictEqual(countByLinkPrefix(posts, '2'), 8, '보드2의 8건이 전부 살아야 한다');
+
+    const truncated = parsedLogs(captured).filter(
+      (entry) => entry.event === 'monitor.fetch.truncated'
+    );
+    assert.strictEqual(
+      truncated.length,
+      0,
+      'collected(30)==limit(30)이면 아무것도 잘리지 않았으니 truncated 로그가 없어야 한다'
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

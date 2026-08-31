@@ -947,15 +947,51 @@ const fetchFromBoardSource = async (
   return { posts, attempts, nextOffset: attemptIndex, usedMirror, blocked };
 };
 
+// 보드별 결과를 라운드로빈으로 섞는다 — 순차 하드컷(ceil(limit/N))은 뒤에
+// 나오는 보드의 실제 수확량을 미리 알 수 없어 앞 보드에 할당한 몫을 되돌려받지
+// 못한다(예: 보드1=22, 보드2=8, 보드3=0, limit=30 인데 보드1을 10건으로 잘라
+// 12건을 근거 없이 버린 사고). 라운드로빈은 각 보드에서 한 건씩 순서대로
+// 가져가다 상한에 닿으면 멈추고, 소진된 보드는 건너뛴다 — 그러면 (a) 모든
+// 보드가 최소 대표성을 갖고 (b) 남는 슬롯을 다른 보드가 전부 쓰며 (c) 전체
+// 수확량이 상한 이하면 하나도 버리지 않는다.
+const roundRobinMerge = (boardPosts: HotdealPost[][], limit: number): HotdealPost[] => {
+  const cursors = new Array(boardPosts.length).fill(0);
+  const merged: HotdealPost[] = [];
+
+  while (merged.length < limit) {
+    let anyTaken = false;
+
+    for (let index = 0; index < boardPosts.length; index += 1) {
+      if (merged.length >= limit) {
+        break;
+      }
+
+      const list = boardPosts[index]!;
+      const cursor = cursors[index]!;
+      if (cursor >= list.length) {
+        continue;
+      }
+
+      merged.push(list[cursor]!);
+      cursors[index] = cursor + 1;
+      anyTaken = true;
+    }
+
+    if (!anyTaken) {
+      break;
+    }
+  }
+
+  return merged;
+};
+
 export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]> => {
   const allAttempts: string[] = [];
-  const allPosts: HotdealPost[] = [];
+  const boardPosts: HotdealPost[][] = [];
   const seen = new Set<string>();
   const userAgents = [...new Set([config.userAgent, ...DEFAULT_USER_AGENTS])];
   let attemptIndex = 0;
   const boardCount = config.boardUrls.length;
-  let remainingBudget = Math.max(0, config.maxItemsPerPoll);
-  let anyBoardTruncated = false;
   let totalFetched = 0;
 
   // 각 boardUrl은 독립적인 크롤링 소스 — 전부 순회
@@ -973,21 +1009,7 @@ export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]
     attemptIndex = nextOffset;
     allAttempts.push(...attempts);
     totalFetched += posts.length;
-
-    // 보드 1개가 총 상한을 다 먹어버리면 뒤 보드가 통째로 잘리는 문제를 막기
-    // 위해 보드별 상한을 둔다. 앞 보드가 자기 몫을 다 못 채우면 남은 예산이
-    // 뒤 보드로 넘어가도록, 매 보드마다 "남은 예산 / 남은 보드 수"로 다시 계산한다.
-    const remainingBoards = boardCount - index;
-    const perSourceLimit = remainingBoards > 0
-      ? Math.ceil(remainingBudget / remainingBoards)
-      : remainingBudget;
-    const boardPosts = posts.slice(0, perSourceLimit);
-    if (boardPosts.length < posts.length) {
-      anyBoardTruncated = true;
-    }
-    remainingBudget = Math.max(0, remainingBudget - boardPosts.length);
-
-    allPosts.push(...boardPosts);
+    boardPosts.push(posts);
 
     logger.info('board fetch completed', {
       event: 'monitor.fetch.board',
@@ -1004,24 +1026,24 @@ export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]
     }
   }
 
-  if (allPosts.length === 0) {
+  if (totalFetched === 0) {
     const summary = allAttempts.slice(-6).join(' | ');
     throw new Error(`No valid board content found. Attempts: ${summary}`);
   }
 
-  const titled = allPosts.filter((item) => item.title.length > 0);
-  const limited = titled.slice(0, config.maxItemsPerPoll);
+  const merged = roundRobinMerge(boardPosts, Math.max(0, config.maxItemsPerPoll));
+  const titled = merged.filter((item) => item.title.length > 0);
 
-  if (anyBoardTruncated || limited.length < titled.length) {
+  if (totalFetched > titled.length) {
     logger.warn('collected posts truncated to configured limit', {
       event: 'monitor.fetch.truncated',
       collected: totalFetched,
       limit: config.maxItemsPerPoll,
-      dropped: totalFetched - limited.length,
+      dropped: totalFetched - titled.length,
     });
   }
 
-  return limited;
+  return titled;
 };
 
 export const findMatchingPosts = (posts: HotdealPost[], keywords: string[]): HotdealPost[] => {
