@@ -86,6 +86,9 @@ export type MonitoringConfig = {
   linkSelector?: string;
   titleSelector?: string;
   enableLegacyDomFallbackScrape: boolean;
+  networkAutoSelectFamily: boolean;
+  deliveryMaxAttempts: number;
+  deliveryRetryBaseMs: number;
 };
 
 const getEnv = (key: string): string | undefined => {
@@ -239,6 +242,11 @@ export const getConfig = () => {
   const linkSelector = getEnv('LINK_SELECTOR');
   const titleSelector = getEnv('TITLE_SELECTOR');
   const enableLegacyDomFallbackScrape = toBoolean(getEnv('ENABLE_LEGACY_DOM_FALLBACK_SCRAPE'), false);
+  // 기본값 false: IPv6 경로 없는 클러스터에서 undici 의 Happy Eyeballs 가
+  // AAAA ENETUNREACH 를 IPv4 시도까지 ETIMEDOUT 으로 무너뜨리는 걸 막는다. src/net.ts 참고.
+  const networkAutoSelectFamily = toBoolean(getEnv('NETWORK_AUTO_SELECT_FAMILY'), false);
+  const deliveryMaxAttempts = toInt(getEnv('DELIVERY_MAX_ATTEMPTS'), 3);
+  const deliveryRetryBaseMs = toInt(getEnv('DELIVERY_RETRY_BASE_MS'), 500);
   const notifierTargets = toNotifierTargets(getEnv('NOTIFIER_TARGETS'));
 
   const keywords = splitKeywords(getEnv('ALERT_KEYWORDS')).filter(Boolean);
@@ -292,6 +300,9 @@ export const getConfig = () => {
     linkSelector,
     titleSelector,
     enableLegacyDomFallbackScrape,
+    networkAutoSelectFamily,
+    deliveryMaxAttempts,
+    deliveryRetryBaseMs,
     notifier,
     keywords,
   } as MonitoringConfig & { notifier: NotifierConfig };

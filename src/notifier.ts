@@ -4,6 +4,11 @@ export type DeliveryResult = {
   ok: boolean;
   target: 'slack' | 'telegram' | 'discord' | 'dry-run';
   message?: string;
+  attempts?: number;
+};
+
+export type SendAlertsOptions = {
+  sleep?: (ms: number) => Promise<void>;
 };
 
 const escapeMarkdown = (value: string): string =>
@@ -29,11 +34,114 @@ const fetchWithTimeout = async (
   }
 };
 
-const sendSlackWebhook = async (
+// --- 실패 원인 보존 (undici 의 "fetch failed" 뒤에 숨는 진짜 원인을 끌어낸다) ---
+
+type CauseLike = { code?: unknown; message?: unknown; address?: unknown; errors?: unknown };
+
+const describeCauseEntry = (entry: unknown): string | undefined => {
+  if (!entry || typeof entry !== 'object') {
+    return undefined;
+  }
+
+  const candidate = entry as CauseLike;
+  const code = typeof candidate.code === 'string' ? candidate.code : undefined;
+  if (!code) {
+    return undefined;
+  }
+
+  const address = typeof candidate.address === 'string' ? candidate.address : undefined;
+  return address ? `${code}:${address}` : code;
+};
+
+const collectCauseDetails = (cause: unknown): string[] => {
+  if (!cause || typeof cause !== 'object') {
+    return [];
+  }
+
+  const candidate = cause as CauseLike;
+  // AggregateError(또는 그 모양을 흉내낸 객체)는 errors 배열에 개별 원인을 담는다 —
+  // Happy Eyeballs 가 A/AAAA 를 동시에 시도하다 둘 다 실패하면 이 형태로 온다.
+  if (Array.isArray(candidate.errors)) {
+    return candidate.errors
+      .map(describeCauseEntry)
+      .filter((value): value is string => Boolean(value));
+  }
+
+  const single = describeCauseEntry(candidate);
+  return single ? [single] : [];
+};
+
+const describeFetchError = (error: unknown): string => {
+  const baseMessage = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
+  const details = collectCauseDetails(cause);
+  return details.length > 0 ? `${baseMessage} (${details.join(', ')})` : baseMessage;
+};
+
+// --- 재시도 (일시 오류만: 네트워크 예외, 429, 5xx. 그 외 4xx는 즉시 포기) ---
+
+type AttemptResult =
+  | { ok: true }
+  | { ok: false; retryable: boolean; message: string; retryAfterMs?: number };
+
+const MAX_RETRY_AFTER_MS = 10_000;
+
+const defaultSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const isRetryableStatus = (status: number): boolean => status === 429 || status >= 500;
+
+const parseRetryAfterMs = (response: Response): number | undefined => {
+  const header = response.headers.get('Retry-After');
+  if (!header) {
+    return undefined;
+  }
+  const seconds = Number.parseFloat(header);
+  if (Number.isNaN(seconds) || seconds < 0) {
+    return undefined;
+  }
+  return seconds * 1_000;
+};
+
+const withRetry = async (
+  target: DeliveryResult['target'],
+  attempt: () => Promise<AttemptResult>,
+  maxAttempts: number,
+  retryBaseMs: number,
+  sleep: (ms: number) => Promise<void>
+): Promise<DeliveryResult> => {
+  const attemptCount = Math.max(1, maxAttempts);
+  let lastMessage: string | undefined;
+
+  for (let attemptNumber = 1; attemptNumber <= attemptCount; attemptNumber += 1) {
+    const result = await attempt();
+    if (result.ok) {
+      return { ok: true, target, attempts: attemptNumber };
+    }
+
+    lastMessage = result.message;
+    const isLastAttempt = attemptNumber === attemptCount;
+    if (!result.retryable || isLastAttempt) {
+      return { ok: false, target, message: lastMessage, attempts: attemptNumber };
+    }
+
+    const backoffMs = retryBaseMs * 2 ** (attemptNumber - 1);
+    const waitMs = Math.min(result.retryAfterMs ?? backoffMs, MAX_RETRY_AFTER_MS);
+    await sleep(waitMs);
+  }
+
+  return { ok: false, target, message: lastMessage ?? 'unknown error', attempts: attemptCount };
+};
+
+// --- 전송 함수 (단일 시도) ---
+
+const attemptSlackWebhook = async (
   url: string,
   payload: { text: string },
   timeoutMs: number
-): Promise<DeliveryResult> => {
+): Promise<AttemptResult> => {
   let response: Response;
   try {
     response = await fetchWithTimeout(
@@ -46,24 +154,28 @@ const sendSlackWebhook = async (
       timeoutMs
     );
   } catch (error: unknown) {
-    const reason = error instanceof Error ? error.message : String(error);
-    return { ok: false, target: 'slack', message: `webhook request failed: ${reason}` };
+    return { ok: false, retryable: true, message: `webhook request failed: ${describeFetchError(error)}` };
   }
 
   const body = await response.text();
   if (!response.ok) {
-    return { ok: false, target: 'slack', message: `webhook HTTP ${response.status}: ${body}` };
+    return {
+      ok: false,
+      retryable: isRetryableStatus(response.status),
+      retryAfterMs: parseRetryAfterMs(response),
+      message: `webhook HTTP ${response.status}: ${body}`,
+    };
   }
 
-  return { ok: true, target: 'slack' };
+  return { ok: true };
 };
 
-const sendSlackBot = async (
+const attemptSlackBot = async (
   botToken: string,
   channel: string,
   text: string,
   timeoutMs: number
-): Promise<DeliveryResult> => {
+): Promise<AttemptResult> => {
   let response: Response;
   try {
     response = await fetchWithTimeout(
@@ -79,38 +191,43 @@ const sendSlackBot = async (
       timeoutMs
     );
   } catch (error: unknown) {
-    const reason = error instanceof Error ? error.message : String(error);
-    return { ok: false, target: 'slack', message: `bot request failed: ${reason}` };
+    return { ok: false, retryable: true, message: `bot request failed: ${describeFetchError(error)}` };
   }
 
   let body: string;
   try {
     body = await response.text();
   } catch {
-    return { ok: false, target: 'slack', message: `bot HTTP ${response.status}: read failed` };
+    return { ok: false, retryable: false, message: `bot HTTP ${response.status}: read failed` };
   }
 
   if (!response.ok) {
-    return { ok: false, target: 'slack', message: `bot HTTP ${response.status}: ${body}` };
+    return {
+      ok: false,
+      retryable: isRetryableStatus(response.status),
+      retryAfterMs: parseRetryAfterMs(response),
+      message: `bot HTTP ${response.status}: ${body}`,
+    };
   }
 
   try {
     const parsed = JSON.parse(body) as { ok?: boolean; error?: string };
     if (!parsed.ok) {
-      return { ok: false, target: 'slack', message: `bot API error: ${parsed.error ?? 'unknown'}` };
+      // 200 이지만 API 레벨 오류(예: invalid_auth) — 재시도해도 소용없는 설정 오류다.
+      return { ok: false, retryable: false, message: `bot API error: ${parsed.error ?? 'unknown'}` };
     }
   } catch {
     // non-JSON 200 response — treat as success
   }
 
-  return { ok: true, target: 'slack' };
+  return { ok: true };
 };
 
-const sendDiscord = async (
+const attemptDiscord = async (
   url: string,
   payload: { content: string },
   timeoutMs: number
-): Promise<DeliveryResult> => {
+): Promise<AttemptResult> => {
   let response: Response;
   try {
     response = await fetchWithTimeout(
@@ -123,26 +240,30 @@ const sendDiscord = async (
       timeoutMs
     );
   } catch (error: unknown) {
-    const reason = error instanceof Error ? error.message : String(error);
-    return { ok: false, target: 'discord', message: `request failed: ${reason}` };
+    return { ok: false, retryable: true, message: `request failed: ${describeFetchError(error)}` };
   }
 
   const body = await response.text();
   if (!response.ok) {
-    const retryAfter = response.headers.get('Retry-After');
-    const suffix = retryAfter ? ` (retry-after=${retryAfter}s)` : '';
-    return { ok: false, target: 'discord', message: `HTTP ${response.status}${suffix}: ${body}` };
+    const retryAfterMs = parseRetryAfterMs(response);
+    const suffix = retryAfterMs !== undefined ? ` (retry-after=${retryAfterMs / 1000}s)` : '';
+    return {
+      ok: false,
+      retryable: isRetryableStatus(response.status),
+      retryAfterMs,
+      message: `HTTP ${response.status}${suffix}: ${body}`,
+    };
   }
 
-  return { ok: true, target: 'discord' };
+  return { ok: true };
 };
 
-const sendTelegram = async (
+const attemptTelegram = async (
   botToken: string,
   chatId: string,
   text: string,
   timeoutMs: number
-): Promise<DeliveryResult> => {
+): Promise<AttemptResult> => {
   const telegramApiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
   const safeText = escapeMarkdown(text);
   let response: Response;
@@ -161,23 +282,28 @@ const sendTelegram = async (
       timeoutMs
     );
   } catch (error: unknown) {
-    const reason = error instanceof Error ? error.message : String(error);
-    return { ok: false, target: 'telegram', message: `request failed: ${reason}` };
+    return { ok: false, retryable: true, message: `request failed: ${describeFetchError(error)}` };
   }
 
   const body = await response.text();
   if (!response.ok) {
-    return { ok: false, target: 'telegram', message: `HTTP ${response.status}: ${body}` };
+    return {
+      ok: false,
+      retryable: isRetryableStatus(response.status),
+      retryAfterMs: parseRetryAfterMs(response),
+      message: `HTTP ${response.status}: ${body}`,
+    };
   }
 
-  return { ok: true, target: 'telegram' };
+  return { ok: true };
 };
 
 export const sendAlerts = async (
   config: AppConfig,
   title: string,
   postUrl: string,
-  matchedKeywords: string[]
+  matchedKeywords: string[],
+  options?: SendAlertsOptions
 ): Promise<DeliveryResult[]> => {
   const selectedTargets = config.notifier.targets ?? [];
   const isSelected = (target: 'slack' | 'telegram' | 'discord'): boolean =>
@@ -224,24 +350,64 @@ export const sendAlerts = async (
     `Keywords: ${matchedKeywords.join(', ')}\n` +
     `Link: ${postUrl}`;
 
+  const maxAttempts = config.deliveryMaxAttempts ?? 3;
+  const retryBaseMs = config.deliveryRetryBaseMs ?? 500;
+  const sleep = options?.sleep ?? defaultSleep;
+
   const jobs: Promise<DeliveryResult>[] = [];
 
   if (slackEnabled) {
     if (slackBotConfigured && config.notifier.slackBotToken && config.notifier.slackChannel) {
-      jobs.push(sendSlackBot(config.notifier.slackBotToken, config.notifier.slackChannel, text, config.requestTimeoutMs));
+      const botToken = config.notifier.slackBotToken;
+      const channel = config.notifier.slackChannel;
+      jobs.push(
+        withRetry(
+          'slack',
+          () => attemptSlackBot(botToken, channel, text, config.requestTimeoutMs),
+          maxAttempts,
+          retryBaseMs,
+          sleep
+        )
+      );
     } else if (config.notifier.slackWebhookUrl) {
-      jobs.push(sendSlackWebhook(config.notifier.slackWebhookUrl, { text }, config.requestTimeoutMs));
+      const webhookUrl = config.notifier.slackWebhookUrl;
+      jobs.push(
+        withRetry(
+          'slack',
+          () => attemptSlackWebhook(webhookUrl, { text }, config.requestTimeoutMs),
+          maxAttempts,
+          retryBaseMs,
+          sleep
+        )
+      );
     }
   }
 
   if (telegramEnabled && config.notifier.telegramBotToken && config.notifier.telegramChatId) {
+    const botToken = config.notifier.telegramBotToken;
+    const chatId = config.notifier.telegramChatId;
     jobs.push(
-      sendTelegram(config.notifier.telegramBotToken, config.notifier.telegramChatId, text, config.requestTimeoutMs)
+      withRetry(
+        'telegram',
+        () => attemptTelegram(botToken, chatId, text, config.requestTimeoutMs),
+        maxAttempts,
+        retryBaseMs,
+        sleep
+      )
     );
   }
 
   if (discordEnabled && config.notifier.discordWebhookUrl) {
-    jobs.push(sendDiscord(config.notifier.discordWebhookUrl, { content: text }, config.requestTimeoutMs));
+    const webhookUrl = config.notifier.discordWebhookUrl;
+    jobs.push(
+      withRetry(
+        'discord',
+        () => attemptDiscord(webhookUrl, { content: text }, config.requestTimeoutMs),
+        maxAttempts,
+        retryBaseMs,
+        sleep
+      )
+    );
   }
 
   return Promise.all(jobs);

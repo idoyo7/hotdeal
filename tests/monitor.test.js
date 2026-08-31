@@ -246,6 +246,72 @@ test('fetchLatestPosts legacy DOM fallback is disabled by default', async () => 
   }
 });
 
+test('fetchLatestPosts rejects listing-page links that never resolve to a post id', async () => {
+  const originalFetch = globalThis.fetch;
+  const html = `
+    <html><body>
+      <a href="https://m.fmkorea.com/hotdeal">8. 삼다수 -1</a>
+      <a href="https://www.fmkorea.com/10277559350">삼다수 정상 게시글</a>
+    </body></html>
+  `;
+
+  globalThis.fetch = async () => new Response(html, { status: 200 });
+
+  try {
+    const posts = await fetchLatestPosts({
+      boardUrl: 'https://www.fmkorea.com/index.php?mid=hotdeal&page=2',
+      boardUrls: ['https://www.fmkorea.com/index.php?mid=hotdeal&page=2'],
+      crawlMode: 'http',
+      requestIntervalMs: 1000,
+      requestTimeoutMs: 5000,
+      maxPagesPerPoll: 1,
+      maxItemsPerPoll: 30,
+      startupMaxPagesPerPoll: 1,
+      startupMaxItemsPerPoll: 30,
+      seenStateFile: './seen.json',
+      useFileState: false,
+      useRedisState: false,
+      redisUrl: undefined,
+      redisKeyPrefix: 'hotdeal:seen:',
+      redisTtlSeconds: 604800,
+      leaderElectionEnabled: false,
+      leaderElectionLeaseName: 'test',
+      leaderElectionNamespace: 'default',
+      leaderElectionIdentity: 'test-pod',
+      leaderElectionLeaseDurationSeconds: 45,
+      leaderElectionRenewIntervalMs: 10000,
+      logLevel: 'info',
+      pollOnce: true,
+      userAgent: 'test-agent',
+      playwrightWsEndpoint: undefined,
+      playwrightExecutablePath: undefined,
+      playwrightHeadless: true,
+      playwrightNavigationTimeoutMs: 15000,
+      playwrightWaitAfterLoadMs: 1500,
+      postSelector: undefined,
+      linkSelector: undefined,
+      titleSelector: undefined,
+      enableLegacyDomFallbackScrape: false,
+      keywords: ['삼다수'],
+      notifier: {
+        slackWebhookUrl: undefined,
+        telegramBotToken: undefined,
+        telegramChatId: undefined,
+        discordWebhookUrl: undefined,
+        targets: [],
+        dryRun: true,
+      },
+    });
+
+    assert.strictEqual(posts.length, 1);
+    assert.strictEqual(posts[0].id, 'fmkorea-post:10277559350');
+    assert.strictEqual(posts[0].link, 'https://www.fmkorea.com/10277559350');
+    assert.ok(!posts.some((post) => post.link === 'https://m.fmkorea.com/hotdeal'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('fetchLatestPosts legacy DOM fallback works only when enabled', async () => {
   const originalFetch = globalThis.fetch;
   const html = `

@@ -246,6 +246,7 @@ export const pollOnce = async (
           okCount,
           failCount,
           details: suffix,
+          attempts: results.map((result) => ({ target: result.target, attempts: result.attempts })),
         },
       });
       continue;

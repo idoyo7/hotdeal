@@ -2,6 +2,7 @@ import { load, type CheerioAPI } from 'cheerio';
 import type { Browser } from 'playwright-core';
 import { AppConfig } from './config.js';
 import { HotdealPost } from './types.js';
+import { logger } from './logger.js';
 
 let sharedBrowser: Browser | undefined;
 let sharedBrowserConfig: string | undefined;
@@ -401,6 +402,11 @@ const normalizePostId = (link: string): string => {
   return link;
 };
 
+// normalizePostId 가 숫자 게시글 번호를 뽑아내지 못하면 링크를 id 로 그대로 돌려주는데,
+// 그건 게시글이 아니라 게시판/목록 URL(예: /hotdeal)을 게시글로 착각했다는 신호다.
+const POST_ID_PATTERN = /^fmkorea-post:\d+$/;
+const isValidPostId = (id: string): boolean => POST_ID_PATTERN.test(id);
+
 const looksLikeBlocked = (body: string): boolean => {
   const lower = body.toLowerCase();
   return ANTI_BOT_MARKERS.some((marker) => lower.includes(marker.toLowerCase()));
@@ -682,6 +688,16 @@ const extractFromCandidates = (doc: CheerioAPI, baseUrl: string, config: AppConf
       return;
     }
 
+    if (!isValidPostId(stableId)) {
+      logger.warn('rejected parsed item without a resolvable post id', {
+        event: 'monitor.parse.rejected',
+        reason: 'unresolved_post_id',
+        title: cleanTitle,
+        link: normalized,
+      });
+      return;
+    }
+
     const existingIndex = used.get(stableId);
     if (existingIndex !== undefined) {
       if (scoreExtractedTitle(cleanTitle) > scoreExtractedTitle(result[existingIndex]?.title ?? '')) {
@@ -757,6 +773,16 @@ const extractWithFallback = (doc: CheerioAPI, baseUrl: string, config: AppConfig
     const normalized = normalizePostLink(normalizeUrl(baseUrl, link).split('#')[0]);
     const stableId = normalizePostId(normalized);
     if (!cleanTitle || !isLikelyPostUrl(normalized)) {
+      return;
+    }
+
+    if (!isValidPostId(stableId)) {
+      logger.warn('rejected parsed item without a resolvable post id', {
+        event: 'monitor.parse.rejected',
+        reason: 'unresolved_post_id',
+        title: cleanTitle,
+        link: normalized,
+      });
       return;
     }
 
