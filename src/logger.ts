@@ -39,6 +39,27 @@ export const compact = (fields: LogFields): LogFields => {
   return result;
 };
 
+const pad = (value: number, length = 2): string => String(value).padStart(length, '0');
+
+/**
+ * `Date#toISOString()`은 항상 UTC(`Z`)로 나간다. 사용자가 로그를 KST 로 보길 원해서
+ * 로컬 오프셋을 붙인 RFC3339 표기로 대체한다. TZ 가 UTC 인 환경에서는 `+00:00`이 붙어
+ * 의미는 그대로 유지된다. `new Date(...)`로 다시 파싱 가능하다(logger.test.js 회귀 확인).
+ */
+const toLocalIsoString = (date: Date): string => {
+  const offsetMinutesTotal = -date.getTimezoneOffset();
+  const sign = offsetMinutesTotal >= 0 ? '+' : '-';
+  const absOffsetMinutes = Math.abs(offsetMinutesTotal);
+  const offsetHours = pad(Math.floor(absOffsetMinutes / 60));
+  const offsetMinutes = pad(absOffsetMinutes % 60);
+
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}` +
+    `${sign}${offsetHours}:${offsetMinutes}`
+  );
+};
+
 const toSerializableError = (error: unknown): unknown => {
   if (error instanceof Error) {
     return {
@@ -59,7 +80,7 @@ const formatLog = (
 ): string => {
   const payload: Record<string, unknown> = {
     level,
-    time: new Date().toISOString(),
+    time: toLocalIsoString(new Date()),
   };
 
   if (fields) {

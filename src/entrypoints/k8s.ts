@@ -1,6 +1,6 @@
 import { unlinkSync, writeFileSync } from 'node:fs';
 import { getConfig } from '../config.js';
-import { applyNetworkFamilyPolicy } from '../net.js';
+import { applyNetworkFamilyPolicy, logStartupTimezone } from '../net.js';
 import { setLogLevel, logger, compact } from '../logger.js';
 import { closeSharedBrowser } from '../monitor.js';
 import { LeaderElector } from '../leaderElection.js';
@@ -62,6 +62,7 @@ const main = async (): Promise<void> => {
   const config = getConfig();
   setLogLevel(config.logLevel);
   applyNetworkFamilyPolicy(config.networkAutoSelectFamily);
+  logStartupTimezone();
   let shutdownRequested = false;
 
   const requestShutdown = (signal: NodeJS.Signals): void => {

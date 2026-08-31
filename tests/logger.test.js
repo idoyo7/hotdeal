@@ -40,7 +40,10 @@ test('logger prints structured JSON payload', () => {
   const parsed = JSON.parse(captured[0]);
   assert.strictEqual(parsed.level, 'info');
   assert.strictEqual(parsed.message, 'hello world');
-  assert.match(parsed.time, /^\d{4}-\d{2}-\d{2}T.*Z$/);
+  // UTC 고정("...Z") 대신 로컬 오프셋을 붙인 RFC3339 표기여야 한다(예: KST 에서 +09:00).
+  assert.match(parsed.time, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}$/);
+  // 오프셋이 붙어도 new Date(...) 로 다시 파싱 가능해야 한다(파싱 호환 유지).
+  assert.ok(!Number.isNaN(new Date(parsed.time).getTime()));
 });
 
 test('logger includes custom fields in JSON payload', () => {
@@ -103,7 +106,7 @@ test('logger omits message when only fields are given', () => {
   assert.strictEqual(parsed.signal, 'SIGTERM');
   assert.ok(!('message' in parsed), 'message 키가 아예 없어야 한다');
   assert.strictEqual(parsed.level, 'info');
-  assert.match(parsed.time, /^\d{4}-\d{2}-\d{2}T.*Z$/);
+  assert.match(parsed.time, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}$/);
 });
 
 test('logger.warn accepts fields-only input', () => {

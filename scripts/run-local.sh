@@ -9,6 +9,7 @@ if [ ! -f .env ]; then
   echo "[local] .env copied from .env.example"
 fi
 
+export TZ="${TZ:-Asia/Seoul}"
 export RUN_ONCE="${RUN_ONCE:-true}"
 export DRY_RUN="${DRY_RUN:-true}"
 export USE_FILE_STATE="${USE_FILE_STATE:-false}"

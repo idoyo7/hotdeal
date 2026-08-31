@@ -18,6 +18,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 FROM base
 ENV NODE_ENV=production
+ENV TZ=Asia/Seoul
 ENV PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium
 WORKDIR /app
 

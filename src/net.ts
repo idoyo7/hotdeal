@@ -19,3 +19,16 @@ export const applyNetworkFamilyPolicy = (autoSelectFamily: boolean): void => {
     autoSelectFamily,
   });
 };
+
+/**
+ * 컨테이너는 TZ 를 명시하지 않으면 UTC 로 돈다. `monitor.ts`의 날짜 파싱은 로컬 시각
+ * 생성자(`new Date(y, m-1, d, h, min)`)에 의존해 게시판 표기를 KST 로 해석하므로,
+ * 배포 환경에서 TZ 설정이 실제로 먹었는지 기동 시점에 로그로 남긴다.
+ */
+export const logStartupTimezone = (): void => {
+  logger.info({
+    event: 'monitor.startup.timezone',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    offsetMinutes: -new Date().getTimezoneOffset(),
+  });
+};

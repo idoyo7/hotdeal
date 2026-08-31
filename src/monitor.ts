@@ -182,7 +182,8 @@ const parseRelativeDate = (value: string, now: Date): string | undefined => {
   return toIso(new Date(now.getTime() - amount * multiplier));
 };
 
-const parseDateToken = (value: string, now: Date): string | undefined => {
+// exported for KST 파싱 회귀 테스트 (tests/kst/dateParsing.test.js) — 그 외 호출부는 여전히 내부용이다.
+export const parseDateToken = (value: string, now: Date): string | undefined => {
   const candidate = value.trim();
   if (!candidate) {
     return undefined;
@@ -246,7 +247,10 @@ const parseDateToken = (value: string, now: Date): string | undefined => {
     return toIso(parsed);
   }
 
-  const yearMatch = compact.match(/(20\d{2})[\-\/.](\d{1,2})[\-\/.](\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/);
+  // year/monthDay 는 koreanYearMatch/koreanMonthDayMatch 처럼 공백을 남긴 candidate 로 매칭한다.
+  // compact 는 모든 공백을 지우는데, 뒤이은 `\s+(hour):(minute)` 그룹이 그 공백을 전제로 하므로
+  // compact 로 매칭하면 "2026.08.31 15:00" 같은 흔한 표기에서 시각이 항상 누락되고 00:00 으로 떨어졌다.
+  const yearMatch = candidate.match(/(20\d{2})[\-\/.](\d{1,2})[\-\/.](\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/);
   if (yearMatch) {
     const [, year, month, day, hour = '0', minute = '0'] = yearMatch;
     const parsed = new Date(
@@ -261,7 +265,7 @@ const parseDateToken = (value: string, now: Date): string | undefined => {
     }
   }
 
-  const monthDayMatch = compact.match(/(?<!\d)(\d{1,2})[\-\/.](\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?(?!\d)/);
+  const monthDayMatch = candidate.match(/(?<!\d)(\d{1,2})[\-\/.](\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?(?!\d)/);
   if (monthDayMatch) {
     const [, month, day, hour = '0', minute = '0'] = monthDayMatch;
     const parsed = new Date(

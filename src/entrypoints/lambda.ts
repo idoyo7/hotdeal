@@ -1,5 +1,5 @@
 import { getConfig } from '../config.js';
-import { applyNetworkFamilyPolicy } from '../net.js';
+import { applyNetworkFamilyPolicy, logStartupTimezone } from '../net.js';
 import { setLogLevel, logger, compact } from '../logger.js';
 import { closeSharedBrowser } from '../monitor.js';
 import { createStateStore } from '../state/factory.js';
@@ -15,6 +15,7 @@ export const handler = async (_event: unknown): Promise<LambdaResponse> => {
   const config = getConfig();
   setLogLevel(config.logLevel);
   applyNetworkFamilyPolicy(config.networkAutoSelectFamily);
+  logStartupTimezone();
 
   logger.info({
     event: 'lambda.invocation.started',
