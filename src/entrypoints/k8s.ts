@@ -10,6 +10,12 @@ import {
   validateNotifierConfig,
   NotifierConfigError,
 } from '../app/validateNotifierConfig.js';
+import {
+  loadStateStoreSafely,
+  runPollAttempt,
+  runOnceFailed,
+  type PollLoopState,
+} from './pollLoop.js';
 
 const wait = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -85,7 +91,7 @@ const main = async (): Promise<void> => {
   await leaderElector.start();
 
   const store = await createStateStore(config);
-  await store.load();
+  await loadStateStoreSafely(store);
 
   // Notifier config validation
   try {
@@ -144,64 +150,78 @@ const main = async (): Promise<void> => {
   // 폴링 옵션은 정적이라 매 사이클 로그에 싣지 않고, 값이 바뀔 때만 1줄 남긴다.
   // startup(5p/120i) → steady(1p/30i) 전환이 유일한 변화 지점이다.
   let lastPollOptionsKey: string | undefined;
+  let pollLoopState: PollLoopState = { consecutiveFailures: 0 };
   try {
     while (true) {
       if (shutdownRequested) {
         break;
       }
 
-      if (config.leaderElectionEnabled) {
-        await leaderElector.waitForLeadership(() => shutdownRequested);
-        if (shutdownRequested) {
-          break;
-        }
+      pollLoopState = await runPollAttempt(
+        async () => {
+          if (config.leaderElectionEnabled) {
+            await leaderElector.waitForLeadership(() => shutdownRequested);
+            if (shutdownRequested) {
+              return;
+            }
+          }
+
+          const maxPagesPerPoll = firstRun
+            ? Math.max(1, config.startupMaxPagesPerPoll)
+            : Math.max(1, config.maxPagesPerPoll);
+          const maxItemsPerPoll = firstRun
+            ? Math.max(1, config.startupMaxItemsPerPoll)
+            : Math.max(1, config.maxItemsPerPoll);
+
+          const pollOptions = {
+            intervalMs: config.requestIntervalMs,
+            maxPagesPerPoll,
+            maxItemsPerPoll,
+            pollOnce: config.pollOnce,
+          };
+          const pollOptionsKey = JSON.stringify(pollOptions);
+          if (pollOptionsKey !== lastPollOptionsKey) {
+            logger.info({
+              event: 'monitor.poll.options',
+              phase: lastPollOptionsKey === undefined ? 'startup' : 'steady',
+              options: pollOptions,
+            });
+            lastPollOptionsKey = pollOptionsKey;
+          }
+
+          const cycleStartedAt = Date.now();
+          const cycleResult = await pollOnce(config, store, {
+            maxPagesPerPoll,
+            maxItemsPerPoll,
+          });
+          firstRun = false;
+
+          logger.info({
+            event: 'monitor.cycle.completed',
+            result: compact({
+              candidates: cycleResult.candidateCount,
+              fresh: cycleResult.freshCount,
+              notified: cycleResult.notifiedPostCount,
+              dryRun: cycleResult.dryRunPostCount,
+              failed: cycleResult.failedPostCount,
+              skippedAlreadyProcessed: cycleResult.skippedAlreadyProcessedCount,
+              stateCheckFailed: cycleResult.stateCheckFailedCount,
+            }),
+            durationMs: Date.now() - cycleStartedAt,
+          });
+        },
+        pollLoopState,
+        setReadinessMarker
+      );
+
+      if (shutdownRequested) {
+        break;
       }
-
-      const maxPagesPerPoll = firstRun
-        ? Math.max(1, config.startupMaxPagesPerPoll)
-        : Math.max(1, config.maxPagesPerPoll);
-      const maxItemsPerPoll = firstRun
-        ? Math.max(1, config.startupMaxItemsPerPoll)
-        : Math.max(1, config.maxItemsPerPoll);
-
-      const pollOptions = {
-        intervalMs: config.requestIntervalMs,
-        maxPagesPerPoll,
-        maxItemsPerPoll,
-        pollOnce: config.pollOnce,
-      };
-      const pollOptionsKey = JSON.stringify(pollOptions);
-      if (pollOptionsKey !== lastPollOptionsKey) {
-        logger.info({
-          event: 'monitor.poll.options',
-          phase: lastPollOptionsKey === undefined ? 'startup' : 'steady',
-          options: pollOptions,
-        });
-        lastPollOptionsKey = pollOptionsKey;
-      }
-
-      const cycleStartedAt = Date.now();
-      const cycleResult = await pollOnce(config, store, {
-        maxPagesPerPoll,
-        maxItemsPerPoll,
-      });
-      firstRun = false;
-
-      logger.info({
-        event: 'monitor.cycle.completed',
-        result: compact({
-          candidates: cycleResult.candidateCount,
-          fresh: cycleResult.freshCount,
-          notified: cycleResult.notifiedPostCount,
-          dryRun: cycleResult.dryRunPostCount,
-          failed: cycleResult.failedPostCount,
-          skippedAlreadyProcessed: cycleResult.skippedAlreadyProcessedCount,
-          stateCheckFailed: cycleResult.stateCheckFailedCount,
-        }),
-        durationMs: Date.now() - cycleStartedAt,
-      });
 
       if (config.pollOnce) {
+        if (runOnceFailed(pollLoopState)) {
+          throw new Error('poll cycle failed in run-once mode');
+        }
         break;
       }
       await waitUntilNextPollOrShutdown(

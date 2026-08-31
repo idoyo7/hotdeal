@@ -79,7 +79,12 @@ export const closeSharedBrowser = async (): Promise<void> => {
 };
 
 const MAX_PARENT_DEPTH = 4;
-const ANTI_BOT_MARKERS = ['에펨코리아 보안 시스템', 'ddosCheckOnly', '수동 접속 갱신'];
+// 'ddosCheckOnly'는 원래 마커 목록에 있었지만 동시에 정상 요청에도 흔히
+// 붙는 쿼리 파라미터 이름이다(collectUrlCandidates 참고). 정상 게시판 페이지가
+// 자기 요청 URL(예: ...&ddosCheckOnly=1)을 canonical 링크나 form action으로
+// 그대로 되돌려주면 이 문자열 하나만으로 차단 오탐이 난다. 실제 안티봇 페이지는
+// 항상 한글 차단 문구를 동반하므로 그 문구만 신호로 남긴다.
+const ANTI_BOT_MARKERS = ['에펨코리아 보안 시스템', '수동 접속 갱신'];
 const DEFAULT_USER_AGENTS = [
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -407,10 +412,13 @@ const normalizePostId = (link: string): string => {
 const POST_ID_PATTERN = /^fmkorea-post:\d+$/;
 const isValidPostId = (id: string): boolean => POST_ID_PATTERN.test(id);
 
-const looksLikeBlocked = (body: string): boolean => {
+// 어떤 마커가 판정 근거였는지 돌려준다 — monitor.fetch.blocked 로그의 marker 필드에 쓴다.
+const findBlockMarker = (body: string): string | undefined => {
   const lower = body.toLowerCase();
-  return ANTI_BOT_MARKERS.some((marker) => lower.includes(marker.toLowerCase()));
+  return ANTI_BOT_MARKERS.find((marker) => lower.includes(marker.toLowerCase()));
 };
+
+const looksLikeBlocked = (body: string): boolean => findBlockMarker(body) !== undefined;
 
 const buildRequestHeaders = (referer: string, userAgent: string): Record<string, string> => ({
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -443,6 +451,7 @@ const collectUrlCandidates = (url: string, page: number): string[] => {
 type CandidateFetchResult = {
   body?: string;
   notes: string[];
+  blocked: boolean;
 };
 
 const BLOCK_STATUSES = new Set([403, 429, 430]);
@@ -463,7 +472,16 @@ const fetchCandidateByHttp = async (
     });
 
     const body = await response.text();
-    const blocked = BLOCK_STATUSES.has(response.status) || looksLikeBlocked(body);
+    const marker = findBlockMarker(body);
+    const blocked = BLOCK_STATUSES.has(response.status) || marker !== undefined;
+
+    if (blocked) {
+      logger.warn('anti-bot block detected', {
+        event: 'monitor.fetch.blocked',
+        url: candidateUrl,
+        marker: marker ?? `http_status_${response.status}`,
+      });
+    }
 
     if (!response.ok) {
       return {
@@ -472,7 +490,7 @@ const fetchCandidateByHttp = async (
       };
     }
 
-    if (looksLikeBlocked(body)) {
+    if (marker !== undefined) {
       return {
         note: 'http blocked by anti-bot page',
         blocked: true,
@@ -499,7 +517,7 @@ const fetchCandidateByPlaywright = async (
   candidateUrl: string,
   userAgent: string,
   config: AppConfig
-): Promise<{ body?: string; note: string }> => {
+): Promise<{ body?: string; note: string; blocked: boolean }> => {
   let context: Awaited<ReturnType<Browser['newContext']>> | undefined;
 
   try {
@@ -539,20 +557,29 @@ const fetchCandidateByPlaywright = async (
     await context.close();
     context = undefined;
 
-    if (looksLikeBlocked(body)) {
+    const marker = findBlockMarker(body);
+    if (marker !== undefined) {
+      logger.warn('anti-bot block detected', {
+        event: 'monitor.fetch.blocked',
+        url: candidateUrl,
+        marker,
+      });
       return {
         note: 'playwright blocked by anti-bot page',
+        blocked: true,
       };
     }
 
     return {
       body,
       note: 'playwright ok',
+      blocked: false,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : '알 수 없는 오류';
     return {
       note: `playwright request error: ${message}`,
+      blocked: false,
     };
   } finally {
     if (context) {
@@ -575,6 +602,7 @@ const fetchCandidateBody = async (
     return {
       body: http.body,
       notes,
+      blocked: http.blocked,
     };
   }
 
@@ -584,6 +612,7 @@ const fetchCandidateBody = async (
     return {
       body: playwright.body,
       notes,
+      blocked: playwright.blocked,
     };
   }
 
@@ -593,6 +622,7 @@ const fetchCandidateBody = async (
     return {
       body: playwright.body,
       notes,
+      blocked: playwright.blocked,
     };
   }
 
@@ -601,12 +631,14 @@ const fetchCandidateBody = async (
   if (!http.body) {
     return {
       notes,
+      blocked: playwright.blocked || http.blocked,
     };
   }
 
   return {
     body: http.body,
     notes,
+    blocked: playwright.blocked || http.blocked,
   };
 };
 
@@ -829,11 +861,19 @@ const fetchFromBoardSource = async (
   seen: Set<string>,
   userAgents: string[],
   attemptOffset: number
-): Promise<{ posts: HotdealPost[]; attempts: string[]; nextOffset: number }> => {
+): Promise<{
+  posts: HotdealPost[];
+  attempts: string[];
+  nextOffset: number;
+  usedMirror: boolean;
+  blocked: boolean;
+}> => {
   const posts: HotdealPost[] = [];
   const attempts: string[] = [];
   const mirrors = dedupeUrls([boardUrl, ...deriveBoardMirrors(boardUrl)]);
   let attemptIndex = attemptOffset;
+  let usedMirror = false;
+  let blocked = false;
 
   for (const activeBoardUrl of mirrors) {
     let consecutiveEmptyPages = 0;
@@ -849,6 +889,9 @@ const fetchFromBoardSource = async (
         attemptIndex += 1;
 
         const fetched = await fetchCandidateBody(candidateUrl, activeBoardUrl, userAgent, config);
+        if (fetched.blocked) {
+          blocked = true;
+        }
         for (const note of fetched.notes) {
           attempts.push(`${requestSummary} ${note}`);
         }
@@ -896,11 +939,12 @@ const fetchFromBoardSource = async (
 
     // 미러는 fallback — 원본에서 게시글을 찾았으면 미러 시도 불필요
     if (boardHasPosts) {
+      usedMirror = activeBoardUrl !== boardUrl;
       break;
     }
   }
 
-  return { posts, attempts, nextOffset: attemptIndex };
+  return { posts, attempts, nextOffset: attemptIndex, usedMirror, blocked };
 };
 
 export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]> => {
@@ -909,10 +953,16 @@ export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]
   const seen = new Set<string>();
   const userAgents = [...new Set([config.userAgent, ...DEFAULT_USER_AGENTS])];
   let attemptIndex = 0;
+  const boardCount = config.boardUrls.length;
+  let remainingBudget = Math.max(0, config.maxItemsPerPoll);
+  let anyBoardTruncated = false;
+  let totalFetched = 0;
 
   // 각 boardUrl은 독립적인 크롤링 소스 — 전부 순회
-  for (const boardUrl of config.boardUrls) {
-    const { posts, attempts, nextOffset } = await fetchFromBoardSource(
+  for (let index = 0; index < boardCount; index += 1) {
+    const boardUrl = config.boardUrls[index]!;
+    const boardStartedAt = Date.now();
+    const { posts, attempts, nextOffset, usedMirror, blocked } = await fetchFromBoardSource(
       boardUrl,
       config,
       seen,
@@ -922,10 +972,34 @@ export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]
 
     attemptIndex = nextOffset;
     allAttempts.push(...attempts);
-    allPosts.push(...posts);
+    totalFetched += posts.length;
+
+    // 보드 1개가 총 상한을 다 먹어버리면 뒤 보드가 통째로 잘리는 문제를 막기
+    // 위해 보드별 상한을 둔다. 앞 보드가 자기 몫을 다 못 채우면 남은 예산이
+    // 뒤 보드로 넘어가도록, 매 보드마다 "남은 예산 / 남은 보드 수"로 다시 계산한다.
+    const remainingBoards = boardCount - index;
+    const perSourceLimit = remainingBoards > 0
+      ? Math.ceil(remainingBudget / remainingBoards)
+      : remainingBudget;
+    const boardPosts = posts.slice(0, perSourceLimit);
+    if (boardPosts.length < posts.length) {
+      anyBoardTruncated = true;
+    }
+    remainingBudget = Math.max(0, remainingBudget - boardPosts.length);
+
+    allPosts.push(...boardPosts);
+
+    logger.info('board fetch completed', {
+      event: 'monitor.fetch.board',
+      url: boardUrl,
+      postCount: posts.length,
+      durationMs: Date.now() - boardStartedAt,
+      usedMirror,
+      blocked,
+    });
 
     // 소스 간 요청 간격
-    if (posts.length > 0 && config.boardUrls.indexOf(boardUrl) < config.boardUrls.length - 1) {
+    if (posts.length > 0 && index < boardCount - 1) {
       await sleep(500);
     }
   }
@@ -935,9 +1009,19 @@ export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]
     throw new Error(`No valid board content found. Attempts: ${summary}`);
   }
 
-  return allPosts
-    .filter((item) => item.title.length > 0)
-    .slice(0, config.maxItemsPerPoll);
+  const titled = allPosts.filter((item) => item.title.length > 0);
+  const limited = titled.slice(0, config.maxItemsPerPoll);
+
+  if (anyBoardTruncated || limited.length < titled.length) {
+    logger.warn('collected posts truncated to configured limit', {
+      event: 'monitor.fetch.truncated',
+      collected: totalFetched,
+      limit: config.maxItemsPerPoll,
+      dropped: totalFetched - limited.length,
+    });
+  }
+
+  return limited;
 };
 
 export const findMatchingPosts = (posts: HotdealPost[], keywords: string[]): HotdealPost[] => {

@@ -375,3 +375,252 @@ test('fetchLatestPosts legacy DOM fallback works only when enabled', async () =>
     globalThis.fetch = originalFetch;
   }
 });
+
+// --- 2차 개선: 크롤 계층 로깅 / 보드별 상한 / ddosCheckOnly 오탐 ---
+
+const captureLog = async (run) => {
+  const captured = [];
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  console.log = (...args) => captured.push(args.join(' '));
+  console.warn = (...args) => captured.push(args.join(' '));
+
+  try {
+    const result = await run();
+    return { captured, result };
+  } finally {
+    console.log = originalLog;
+    console.warn = originalWarn;
+  }
+};
+
+const parsedLogs = (captured) =>
+  captured.map((line) => JSON.parse(line));
+
+const baseTestConfig = (boardUrls, overrides = {}) => ({
+  boardUrl: boardUrls[0],
+  boardUrls,
+  crawlMode: 'http',
+  requestIntervalMs: 1000,
+  requestTimeoutMs: 5000,
+  maxPagesPerPoll: 1,
+  maxItemsPerPoll: 30,
+  startupMaxPagesPerPoll: 1,
+  startupMaxItemsPerPoll: 30,
+  seenStateFile: './seen.json',
+  useFileState: false,
+  useRedisState: false,
+  redisUrl: undefined,
+  redisKeyPrefix: 'hotdeal:seen:',
+  redisTtlSeconds: 604800,
+  stateBackend: 'memory',
+  dynamoTableName: 'hotdeal-seen-posts',
+  dynamoTtlSeconds: 604800,
+  dynamoRegion: undefined,
+  leaderElectionEnabled: false,
+  leaderElectionLeaseName: 'test',
+  leaderElectionNamespace: 'default',
+  leaderElectionIdentity: 'test-pod',
+  leaderElectionLeaseDurationSeconds: 45,
+  leaderElectionRenewIntervalMs: 10000,
+  logLevel: 'info',
+  pollOnce: true,
+  userAgent: 'test-agent',
+  playwrightWsEndpoint: undefined,
+  playwrightExecutablePath: undefined,
+  playwrightHeadless: true,
+  playwrightNavigationTimeoutMs: 15000,
+  playwrightWaitAfterLoadMs: 1500,
+  postSelector: undefined,
+  linkSelector: undefined,
+  titleSelector: undefined,
+  enableLegacyDomFallbackScrape: false,
+  keywords: [],
+  notifier: {
+    slackWebhookUrl: undefined,
+    telegramBotToken: undefined,
+    telegramChatId: undefined,
+    discordWebhookUrl: undefined,
+    targets: [],
+    dryRun: true,
+  },
+  ...overrides,
+});
+
+const makeBoardHtml = (basePostId, count, label) => {
+  const anchors = [];
+  for (let i = 0; i < count; i += 1) {
+    anchors.push(`<a href="https://www.fmkorea.com/${basePostId + i}">${label} 특가 ${i}</a>`);
+  }
+  return `<html><body>${anchors.join('\n')}</body></html>`;
+};
+
+test('fetchLatestPosts logs monitor.fetch.board once per board with url/postCount/durationMs/usedMirror/blocked', async () => {
+  const originalFetch = globalThis.fetch;
+  const boardUrl = 'https://www.fmkorea.com/index.php?mid=hotdeal&page=1';
+  globalThis.fetch = async () =>
+    new Response(makeBoardHtml(9000000, 2, '단일보드'), { status: 200 });
+
+  try {
+    const config = baseTestConfig([boardUrl]);
+    const { captured, result: posts } = await captureLog(() => fetchLatestPosts(config));
+
+    assert.strictEqual(posts.length, 2);
+
+    const boardLogs = parsedLogs(captured).filter(
+      (entry) => entry.event === 'monitor.fetch.board'
+    );
+    assert.strictEqual(boardLogs.length, 1);
+    assert.strictEqual(boardLogs[0].url, boardUrl);
+    assert.strictEqual(boardLogs[0].postCount, 2);
+    assert.strictEqual(typeof boardLogs[0].durationMs, 'number');
+    assert.strictEqual(boardLogs[0].usedMirror, false);
+    assert.strictEqual(boardLogs[0].blocked, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchLatestPosts logs monitor.fetch.blocked with a marker and reports blocked:true on that board', async () => {
+  const originalFetch = globalThis.fetch;
+  const blockedHtml = '<html><body>에펨코리아 보안 시스템에 의해 접속이 제한되었습니다</body></html>';
+  const okBoardUrl = 'https://www.fmkorea.com/index.php?mid=okboard';
+  const blockedBoardUrl = 'https://www.fmkorea.com/index.php?mid=securedboard';
+
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes('mid=okboard')) {
+      return new Response(makeBoardHtml(9100000, 1, '정상보드'), { status: 200 });
+    }
+    return new Response(blockedHtml, { status: 200 });
+  };
+
+  try {
+    const config = baseTestConfig([blockedBoardUrl, okBoardUrl]);
+    const { captured, result: posts } = await captureLog(() => fetchLatestPosts(config));
+
+    assert.strictEqual(posts.length, 1);
+
+    const parsed = parsedLogs(captured);
+    const blockedWarnings = parsed.filter((entry) => entry.event === 'monitor.fetch.blocked');
+    assert.ok(blockedWarnings.length > 0, 'monitor.fetch.blocked 로그가 최소 1건 있어야 한다');
+    assert.ok(
+      blockedWarnings.every((entry) => entry.marker === '에펨코리아 보안 시스템'),
+      'marker 필드가 실제로 판정에 쓰인 문구를 담아야 한다'
+    );
+    assert.ok(blockedWarnings.every((entry) => typeof entry.url === 'string' && entry.url.length > 0));
+
+    const boardLogs = parsed.filter((entry) => entry.event === 'monitor.fetch.board');
+    const blockedBoardLog = boardLogs.find((entry) => entry.url === blockedBoardUrl);
+    const okBoardLog = boardLogs.find((entry) => entry.url === okBoardUrl);
+    assert.strictEqual(blockedBoardLog.blocked, true);
+    assert.strictEqual(blockedBoardLog.postCount, 0);
+    assert.strictEqual(okBoardLog.blocked, false);
+    assert.strictEqual(okBoardLog.postCount, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchLatestPosts does not treat a normal page reflecting its own ddosCheckOnly URL as blocked', async () => {
+  const originalFetch = globalThis.fetch;
+  const boardUrl = 'https://www.fmkorea.com/index.php?mid=hotdeal&ddosCheckOnly=1';
+  // 정상 게시판 페이지가 canonical 링크로 자기 요청 URL(ddosCheckOnly=1 포함)을 되돌려주는 경우
+  const html = `
+    <html><head><link rel="canonical" href="${boardUrl}"></head>
+    <body>${makeBoardHtml(9200000, 1, '정상')}</body></html>
+  `;
+  globalThis.fetch = async () => new Response(html, { status: 200 });
+
+  try {
+    const config = baseTestConfig([boardUrl]);
+    const posts = await fetchLatestPosts(config);
+    assert.strictEqual(posts.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchLatestPosts still treats a genuine anti-bot page as blocked', async () => {
+  const originalFetch = globalThis.fetch;
+  const boardUrl = 'https://www.fmkorea.com/index.php?mid=hotdeal';
+  const html = '<html><body>에펨코리아 보안 시스템 - 수동 접속 갱신이 필요합니다 (ddosCheckOnly)</body></html>';
+  globalThis.fetch = async () => new Response(html, { status: 200 });
+
+  try {
+    const config = baseTestConfig([boardUrl]);
+    await assert.rejects(fetchLatestPosts(config), /No valid board content found/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchLatestPosts distributes the shared per-poll cap evenly and includes all boards', async () => {
+  const originalFetch = globalThis.fetch;
+  const boardUrls = [
+    'https://www.fmkorea.com/index.php?mid=board1',
+    'https://www.fmkorea.com/index.php?mid=board2',
+    'https://www.fmkorea.com/index.php?mid=board3',
+  ];
+
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes('mid=board1')) {
+      return new Response(makeBoardHtml(1000000, 40, '보드1'), { status: 200 });
+    }
+    if (target.includes('mid=board2')) {
+      return new Response(makeBoardHtml(2000000, 40, '보드2'), { status: 200 });
+    }
+    return new Response(makeBoardHtml(3000000, 40, '보드3'), { status: 200 });
+  };
+
+  try {
+    const config = baseTestConfig(boardUrls, { maxItemsPerPoll: 30 });
+    const { captured, result: posts } = await captureLog(() => fetchLatestPosts(config));
+
+    assert.ok(posts.length <= 30, `총합이 상한(30) 이하여야 한다 (실측 ${posts.length})`);
+
+    const countByBoard = (prefix) =>
+      posts.filter((post) => post.link.includes(`fmkorea.com/${prefix}`)).length;
+    assert.ok(countByBoard('1') > 0, '보드1 게시글이 최소 1건 섞여야 한다');
+    assert.ok(countByBoard('2') > 0, '보드2 게시글이 최소 1건 섞여야 한다');
+    assert.ok(countByBoard('3') > 0, '보드3 게시글이 최소 1건 섞여야 한다');
+
+    const truncated = parsedLogs(captured).filter(
+      (entry) => entry.event === 'monitor.fetch.truncated'
+    );
+    assert.strictEqual(truncated.length, 1);
+    assert.strictEqual(truncated[0].limit, 30);
+    assert.ok(truncated[0].collected >= 30);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchLatestPosts lets a later board use the slots an earlier board could not fill', async () => {
+  const originalFetch = globalThis.fetch;
+  const boardUrls = [
+    'https://www.fmkorea.com/index.php?mid=board1',
+    'https://www.fmkorea.com/index.php?mid=board2',
+    'https://www.fmkorea.com/index.php?mid=board3',
+  ];
+
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes('mid=board1')) {
+      return new Response(makeBoardHtml(1000000, 5, '보드1'), { status: 200 });
+    }
+    if (target.includes('mid=board2')) {
+      return new Response(makeBoardHtml(2000000, 40, '보드2'), { status: 200 });
+    }
+    return new Response(makeBoardHtml(3000000, 40, '보드3'), { status: 200 });
+  };
+
+  try {
+    const config = baseTestConfig(boardUrls, { maxItemsPerPoll: 30 });
+    const posts = await fetchLatestPosts(config);
+    assert.strictEqual(posts.length, 30, '보드1이 못 채운 슬롯을 뒤 보드가 채워 총 30건이어야 한다');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

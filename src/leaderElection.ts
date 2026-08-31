@@ -431,7 +431,7 @@ export class LeaderElector {
     const holder = holderIdentity || 'none';
 
     if (isLeader && !this.leader) {
-      logger.debug('leader election acquired', {
+      logger.info('leader election acquired', {
         event: 'leaderElection.state.changed',
         state: 'acquired',
         identity: this.identity,
@@ -440,7 +440,7 @@ export class LeaderElector {
     }
 
     if (!isLeader && this.leader) {
-      logger.debug(reason === 'shutdown_release' ? 'leader election released' : 'leader election lost', {
+      logger.info(reason === 'shutdown_release' ? 'leader election released' : 'leader election lost', {
         event: 'leaderElection.state.changed',
         state: reason === 'shutdown_release' ? 'released' : 'lost',
         reason,
