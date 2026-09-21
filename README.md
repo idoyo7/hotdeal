@@ -122,6 +122,7 @@ npm run docker:test
 | `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL |
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot Token |
 | `TELEGRAM_CHAT_ID` | Telegram Chat ID |
+| `TELEGRAM_MENTION_RULES` | 키워드별 텔레그램 멘션 규칙. 콤마로 규칙 구분, `키워드=대상\|대상` 형식(대상은 `\|`로 구분). 대상은 `@username`(5~32자) 또는 숫자 user id. 예: `보먹돼=@mont_k\|123456789,장어=@mont_k`. 매칭된 키워드의 대상들만 메시지 끝에 `CC:` 로 추가됨(텔레그램 전용). 형식이 잘못된 항목은 무시됨 |
 | `POST_SELECTOR` | 게시글 항목 선택자(선택) |
 | `LINK_SELECTOR` | 링크 선택자(선택) |
 | `TITLE_SELECTOR` | 제목 선택자(선택) |

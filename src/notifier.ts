@@ -1,4 +1,5 @@
-import { AppConfig } from './config.js';
+import { AppConfig, TelegramMentionRule } from './config.js';
+import { normalizeKeywordText } from './monitor.js';
 
 export type DeliveryResult = {
   ok: boolean;
@@ -13,6 +14,39 @@ export type SendAlertsOptions = {
 
 const escapeMarkdown = (value: string): string =>
   value.replace(/[&<>]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
+
+// 매칭된 키워드에 해당하는 텔레그램 멘션 대상들을 순서 보존 + 중복 제거로 모은다.
+const resolveMentionTargets = (
+  rules: TelegramMentionRule[],
+  matchedKeywords: string[]
+): string[] => {
+  const normalizedMatched = matchedKeywords.map((keyword) => normalizeKeywordText(keyword));
+  const seen = new Set<string>();
+  const targets: string[] = [];
+
+  for (const rule of rules) {
+    const normalizedRuleKeyword = normalizeKeywordText(rule.keyword);
+    if (!normalizedRuleKeyword || !normalizedMatched.includes(normalizedRuleKeyword)) {
+      continue;
+    }
+
+    for (const target of rule.targets) {
+      if (seen.has(target)) {
+        continue;
+      }
+      seen.add(target);
+      targets.push(target);
+    }
+  }
+
+  return targets;
+};
+
+// 숫자 id 는 escapeMarkdown 이후 붙는 raw HTML 링크로, @username 은 그대로 렌더링한다.
+const renderMentionsHtml = (targets: string[]): string =>
+  targets
+    .map((target) => (/^\d+$/.test(target) ? `<a href="tg://user?id=${target}">${target}</a>` : target))
+    .join(' ');
 
 const fetchWithTimeout = async (
   url: string,
@@ -262,10 +296,11 @@ const attemptTelegram = async (
   botToken: string,
   chatId: string,
   text: string,
-  timeoutMs: number
+  timeoutMs: number,
+  rawHtmlSuffix?: string
 ): Promise<AttemptResult> => {
   const telegramApiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-  const safeText = escapeMarkdown(text);
+  const safeText = escapeMarkdown(text) + (rawHtmlSuffix ? `\nCC: ${rawHtmlSuffix}` : '');
   let response: Response;
   try {
     response = await fetchWithTimeout(
@@ -319,8 +354,15 @@ export const sendAlerts = async (
     Boolean(config.notifier.telegramChatId);
   const discordEnabled = isSelected('discord') && Boolean(config.notifier.discordWebhookUrl);
 
+  const mentionTargets = resolveMentionTargets(
+    config.notifier.telegramMentionRules ?? [],
+    matchedKeywords
+  );
+
   if (config.notifier.dryRun) {
     const baseMessage = `[DRY-RUN] ${title} :: ${postUrl} [${matchedKeywords.join(', ')}]`;
+    const telegramMessage =
+      mentionTargets.length > 0 ? `${baseMessage} cc=${mentionTargets.join(',')}` : baseMessage;
     if (!slackEnabled && !telegramEnabled && !discordEnabled) {
       return [
         {
@@ -336,7 +378,7 @@ export const sendAlerts = async (
       results.push({ ok: true, target: 'slack', message: baseMessage });
     }
     if (telegramEnabled) {
-      results.push({ ok: true, target: 'telegram', message: baseMessage });
+      results.push({ ok: true, target: 'telegram', message: telegramMessage });
     }
     if (discordEnabled) {
       results.push({ ok: true, target: 'discord', message: baseMessage });
@@ -386,10 +428,11 @@ export const sendAlerts = async (
   if (telegramEnabled && config.notifier.telegramBotToken && config.notifier.telegramChatId) {
     const botToken = config.notifier.telegramBotToken;
     const chatId = config.notifier.telegramChatId;
+    const mentionHtml = mentionTargets.length > 0 ? renderMentionsHtml(mentionTargets) : undefined;
     jobs.push(
       withRetry(
         'telegram',
-        () => attemptTelegram(botToken, chatId, text, config.requestTimeoutMs),
+        () => attemptTelegram(botToken, chatId, text, config.requestTimeoutMs, mentionHtml),
         maxAttempts,
         retryBaseMs,
         sleep

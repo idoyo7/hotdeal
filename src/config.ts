@@ -34,6 +34,11 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export type NotifierTarget = 'slack' | 'telegram' | 'discord';
 
+export type TelegramMentionRule = {
+  keyword: string;
+  targets: string[];
+};
+
 export type NotifierConfig = {
   slackWebhookUrl?: string;
   slackBotToken?: string;
@@ -43,6 +48,7 @@ export type NotifierConfig = {
   discordWebhookUrl?: string;
   targets?: NotifierTarget[];
   dryRun?: boolean;
+  telegramMentionRules: TelegramMentionRule[];
 };
 
 export type StateBackend = 'memory' | 'file' | 'redis' | 'dynamodb';
@@ -176,6 +182,47 @@ const toNotifierTargets = (value: string | undefined): NotifierTarget[] => {
   return result;
 };
 
+const TELEGRAM_USERNAME_RE = /^@[A-Za-z0-9_]{5,32}$/;
+const TELEGRAM_USER_ID_RE = /^\d+$/;
+
+const parseTelegramMentionRules = (value: string | undefined): TelegramMentionRule[] => {
+  const rules: TelegramMentionRule[] = [];
+  if (!value) {
+    return rules;
+  }
+
+  for (const rawRule of value.split(',')) {
+    const trimmedRule = rawRule.trim();
+    if (!trimmedRule) {
+      continue;
+    }
+
+    const separatorIndex = trimmedRule.indexOf('=');
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const keyword = trimmedRule.slice(0, separatorIndex).trim();
+    const targetsRaw = trimmedRule.slice(separatorIndex + 1).trim();
+    if (!keyword || !targetsRaw) {
+      continue;
+    }
+
+    const targets = targetsRaw
+      .split('|')
+      .map((target) => target.trim())
+      .filter((target) => TELEGRAM_USERNAME_RE.test(target) || TELEGRAM_USER_ID_RE.test(target));
+
+    if (targets.length === 0) {
+      continue;
+    }
+
+    rules.push({ keyword, targets });
+  }
+
+  return rules;
+};
+
 const dedupeUrls = (items: string[]): string[] => {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -260,6 +307,7 @@ export const getConfig = () => {
     discordWebhookUrl: getEnv('DISCORD_WEBHOOK_URL'),
     targets: notifierTargets,
     dryRun: toBoolean(getEnv('DRY_RUN'), false),
+    telegramMentionRules: parseTelegramMentionRules(getEnv('TELEGRAM_MENTION_RULES')),
   };
 
   return {

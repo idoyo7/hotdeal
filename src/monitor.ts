@@ -93,7 +93,7 @@ const DEFAULT_USER_AGENTS = [
 
 const toIso = (value: Date): string => value.toISOString();
 
-const normalizeKeywordText = (value: string): string =>
+export const normalizeKeywordText = (value: string): string =>
   value
     .toLowerCase()
     .normalize('NFKC')

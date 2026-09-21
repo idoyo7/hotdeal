@@ -71,3 +71,31 @@ test('getConfig reads delivery retry settings from env', () => {
     assert.strictEqual(config.deliveryRetryBaseMs, 1000);
   });
 });
+
+test('getConfig defaults telegramMentionRules to an empty array', () => {
+  withEnv({ TELEGRAM_MENTION_RULES: undefined }, () => {
+    const config = getConfig();
+    assert.deepStrictEqual(config.notifier.telegramMentionRules, []);
+  });
+});
+
+test('getConfig parses telegramMentionRules with username and numeric targets', () => {
+  withEnv({ TELEGRAM_MENTION_RULES: '보먹돼=@mont_k|123456789,장어=@mont_k' }, () => {
+    const config = getConfig();
+    assert.deepStrictEqual(config.notifier.telegramMentionRules, [
+      { keyword: '보먹돼', targets: ['@mont_k', '123456789'] },
+      { keyword: '장어', targets: ['@mont_k'] },
+    ]);
+  });
+});
+
+test('getConfig skips malformed telegramMentionRules entries', () => {
+  withEnv({
+    TELEGRAM_MENTION_RULES:
+      // 구분자 없음, 유효 타겟 없음, username 5자 미만 은 각각 스킵되고 정상 항목만 남는다
+      'noequalsign,broken=###,short=@abc,ok=@mont_k',
+  }, () => {
+    const config = getConfig();
+    assert.deepStrictEqual(config.notifier.telegramMentionRules, [{ keyword: 'ok', targets: ['@mont_k'] }]);
+  });
+});
