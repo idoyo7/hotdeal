@@ -137,7 +137,7 @@ Slack 또는 Telegram 둘 다 설정하면 둘 다 전송됩니다.
 | 항목 | 값 |
 | --- | --- |
 | 매니페스트 저장소 | `idoyo7/montstrap` |
-| 경로 | `stage/hotdeal/manifests/` |
+| 경로 | `hub/hotdeal/manifests/` |
 | ArgoCD Application | `hotdeal` (namespace `argocd`) |
 | 배포 네임스페이스 | `hotdeal` |
 | 동기화 정책 | `automated` + `selfHeal` + `prune` |
@@ -147,7 +147,7 @@ Redis TTL(기본 7일) 동안 중복 상태가 유지되며, 다중 Pod에서도
 
 ### 설정 변경 방법
 
-`ALERT_KEYWORDS` 같은 런타임 설정은 montstrap의 `stage/hotdeal/manifests/configmap.yaml`을 수정하고
+`ALERT_KEYWORDS` 같은 런타임 설정은 montstrap의 `hub/hotdeal/manifests/configmap.yaml`을 수정하고
 `main`에 push하면 ArgoCD가 자동 동기화합니다.
 
 Deployment에 `reloader.stakater.com/auto: "true"`가 붙어 있어 ConfigMap/Secret이 바뀌면

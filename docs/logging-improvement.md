@@ -188,7 +188,7 @@ for k,v in c.most_common(): print(f'{v:4}회 평균 {b[k]//v:5}자 {k}')
 
 ### 배포 형상
 
-이 저장소에는 매니페스트가 없다. `idoyo7/montstrap`의 `stage/hotdeal/manifests/`를
+이 저장소에는 매니페스트가 없다. `idoyo7/montstrap`의 `hub/hotdeal/manifests/`를
 ArgoCD가 auto-sync한다. `LOG_FORMAT` 같은 환경변수를 추가하려면 거기 `configmap.yaml`을
 수정하고 push하면 된다. Deployment에 `reloader.stakater.com/auto`가 붙어 있어
 ConfigMap 변경 시 자동 롤아웃된다.
