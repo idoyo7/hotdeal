@@ -5,7 +5,7 @@
   "description": "FMKorea hotdeal monitor with Slack and Telegram alerts",
   "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -21,17 +21,17 @@
     "test": "npm run build && node --test tests/*.js && TZ=Asia/Seoul node --test tests/kst/*.js"
   },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.700.0",
-    "@kubernetes/client-node": "^1.4.0",
-    "cheerio": "^1.0.0",
-    "dotenv": "^16.4.5",
-    "@sparticuz/chromium-min": "^133.0.0",
-    "playwright-core": "^1.52.0",
-    "redis": "^4.7.1"
+    "@aws-sdk/client-dynamodb": "^3.1141.0",
+    "@kubernetes/client-node": "^2.0.0",
+    "cheerio": "^1.2.0",
+    "dotenv": "^18.0.4",
+    "@sparticuz/chromium-min": "^153.0.0",
+    "playwright-core": "^1.63.0",
+    "redis": "^6.2.1"
   },
   "devDependencies": {
-    "@types/node": "^22.7.5",
-    "tsx": "^4.16.2",
-    "typescript": "^5.5.4"
+    "@types/node": "^24.19.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }
