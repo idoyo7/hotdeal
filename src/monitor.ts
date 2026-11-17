@@ -318,6 +318,33 @@ const sleep = async (ms: number): Promise<void> => {
   });
 };
 
+/**
+ * 안티봇 차단을 감지해 폴링 사이클을 중단했을 때 던지는 에러. 호출자(k8s 루프)가
+ * 일반 실패와 구분해 긴 쿨다운을 적용하는 데 쓴다.
+ */
+export class AntiBotBlockedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AntiBotBlockedError';
+  }
+}
+
+// 사이클 안에서 요청 사이 간격을 두기 위한 카운터. 첫 요청은 지연 없이 나간다.
+type RequestPacer = { requestCount: number };
+
+export const computeRequestDelayMs = (
+  baseMs: number,
+  jitterMs: number,
+  random: () => number = Math.random
+): number => Math.max(0, baseMs || 0) + Math.floor(random() * Math.max(0, jitterMs || 0));
+
+const paceRequest = async (pacer: RequestPacer, config: AppConfig): Promise<void> => {
+  if (pacer.requestCount > 0) {
+    await sleep(computeRequestDelayMs(config.requestDelayMs, config.requestDelayJitterMs));
+  }
+  pacer.requestCount += 1;
+};
+
 const dedupeUrls = (urls: string[]): string[] => {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -333,7 +360,7 @@ const dedupeUrls = (urls: string[]): string[] => {
   return result;
 };
 
-const deriveBoardMirrors = (boardUrl: string): string[] => {
+export const deriveBoardMirrors = (boardUrl: string): string[] => {
   try {
     const base = new URL(boardUrl);
     const host = base.hostname.toLowerCase();
@@ -446,8 +473,15 @@ const addQueryParam = (url: string, key: string, value: string): string => {
   }
 };
 
-const collectUrlCandidates = (url: string, page: number): string[] => {
+export const collectUrlCandidates = (
+  url: string,
+  page: number,
+  includeDdosCheckCandidate = true
+): string[] => {
   const pageUrl = page <= 1 ? url : addQueryParam(url, 'page', String(page));
+  if (!includeDdosCheckCandidate) {
+    return [pageUrl];
+  }
   const candidates = [pageUrl, addQueryParam(pageUrl, 'ddosCheckOnly', '1')];
   return candidates.filter((candidate, index, list) => list.indexOf(candidate) === index);
 };
@@ -864,17 +898,22 @@ const fetchFromBoardSource = async (
   config: AppConfig,
   seen: Set<string>,
   userAgents: string[],
-  attemptOffset: number
+  attemptOffset: number,
+  pacer: RequestPacer
 ): Promise<{
   posts: HotdealPost[];
   attempts: string[];
   nextOffset: number;
   usedMirror: boolean;
   blocked: boolean;
+  aborted: boolean;
 }> => {
   const posts: HotdealPost[] = [];
   const attempts: string[] = [];
-  const mirrors = dedupeUrls([boardUrl, ...deriveBoardMirrors(boardUrl)]);
+  const mirrors = dedupeUrls([
+    boardUrl,
+    ...(config.boardMirrorFallback === false ? [] : deriveBoardMirrors(boardUrl)),
+  ]);
   let attemptIndex = attemptOffset;
   let usedMirror = false;
   let blocked = false;
@@ -884,7 +923,7 @@ const fetchFromBoardSource = async (
     let boardHasPosts = false;
 
     for (let page = 1; page <= config.maxPagesPerPoll; page += 1) {
-      const urlCandidates = collectUrlCandidates(activeBoardUrl, page);
+      const urlCandidates = collectUrlCandidates(activeBoardUrl, page, config.ddosCheckCandidate !== false);
       let pageHasPosts = false;
 
       for (const candidateUrl of urlCandidates) {
@@ -892,12 +931,18 @@ const fetchFromBoardSource = async (
         const userAgent = userAgents[attemptIndex % userAgents.length] ?? config.userAgent;
         attemptIndex += 1;
 
+        await paceRequest(pacer, config);
         const fetched = await fetchCandidateBody(candidateUrl, activeBoardUrl, userAgent, config);
         if (fetched.blocked) {
           blocked = true;
         }
         for (const note of fetched.notes) {
           attempts.push(`${requestSummary} ${note}`);
+        }
+
+        // 차단되면 남은 후보·페이지·미러를 더 두드리지 않고 즉시 중단한다.
+        if (fetched.blocked && config.abortOnBlock) {
+          return { posts, attempts, nextOffset: attemptIndex, usedMirror, blocked, aborted: true };
         }
 
         if (!fetched.body) {
@@ -914,15 +959,21 @@ const fetchFromBoardSource = async (
           return true;
         });
 
-        if (newPosts.length === 0) {
-          attempts.push(`${requestSummary} parsed 0 new posts`);
+        // 파싱은 됐지만 전부 다른 보드와 겹쳐 이미 본 글이면 정상 페이지다 —
+        // 다음 후보/미러를 시도하지 않는다. 진짜 실패(본문 없음/0건 파싱)만 넘어간다.
+        if (all.length === 0) {
+          attempts.push(`${requestSummary} parsed 0 posts`);
           continue;
         }
 
         pageHasPosts = true;
         boardHasPosts = true;
         posts.push(...newPosts);
-        attempts.push(`${requestSummary} parsed ${newPosts.length} new posts`);
+        attempts.push(
+          newPosts.length === 0
+            ? `${requestSummary} parsed ${all.length} posts (all already seen)`
+            : `${requestSummary} parsed ${newPosts.length} new posts`
+        );
         break;
       }
 
@@ -936,9 +987,6 @@ const fetchFromBoardSource = async (
         break;
       }
 
-      if (page < config.maxPagesPerPoll && posts.length > 0) {
-        await sleep(350);
-      }
     }
 
     // 미러는 fallback — 원본에서 게시글을 찾았으면 미러 시도 불필요
@@ -948,7 +996,7 @@ const fetchFromBoardSource = async (
     }
   }
 
-  return { posts, attempts, nextOffset: attemptIndex, usedMirror, blocked };
+  return { posts, attempts, nextOffset: attemptIndex, usedMirror, blocked, aborted: false };
 };
 
 // 보드별 결과를 라운드로빈으로 섞는다 — 순차 하드컷(ceil(limit/N))은 뒤에
@@ -997,17 +1045,19 @@ export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]
   let attemptIndex = 0;
   const boardCount = config.boardUrls.length;
   let totalFetched = 0;
+  const pacer: RequestPacer = { requestCount: 0 };
 
   // 각 boardUrl은 독립적인 크롤링 소스 — 전부 순회
   for (let index = 0; index < boardCount; index += 1) {
     const boardUrl = config.boardUrls[index]!;
     const boardStartedAt = Date.now();
-    const { posts, attempts, nextOffset, usedMirror, blocked } = await fetchFromBoardSource(
+    const { posts, attempts, nextOffset, usedMirror, blocked, aborted } = await fetchFromBoardSource(
       boardUrl,
       config,
       seen,
       userAgents,
-      attemptIndex
+      attemptIndex,
+      pacer
     );
 
     attemptIndex = nextOffset;
@@ -1024,9 +1074,16 @@ export const fetchLatestPosts = async (config: AppConfig): Promise<HotdealPost[]
       blocked,
     });
 
-    // 소스 간 요청 간격
-    if (posts.length > 0 && index < boardCount - 1) {
-      await sleep(500);
+    if (aborted) {
+      logger.warn('fetch aborted due to anti-bot block', {
+        event: 'monitor.fetch.aborted',
+        url: boardUrl,
+        requestCount: pacer.requestCount,
+      });
+      const summary = allAttempts.slice(-6).join(' | ');
+      throw new AntiBotBlockedError(
+        `Anti-bot block detected; aborted after ${pacer.requestCount} requests. Attempts: ${summary}`
+      );
     }
   }
 

@@ -11,6 +11,7 @@ import {
   NotifierConfigError,
 } from '../app/validateNotifierConfig.js';
 import {
+  computeNextWaitMs,
   loadStateStoreSafely,
   runPollAttempt,
   runOnceFailed,
@@ -195,6 +196,7 @@ const main = async (): Promise<void> => {
             maxPagesPerPoll,
             maxItemsPerPoll,
           });
+          // 성공한 뒤에만 false — 실패 재시도는 startup 페이지 수를 다시 쓴다(백필이 결국 성공해야 하므로 의도된 동작).
           firstRun = false;
 
           logger.info({
@@ -225,10 +227,15 @@ const main = async (): Promise<void> => {
         }
         break;
       }
-      await waitUntilNextPollOrShutdown(
-        config.requestIntervalMs,
-        () => shutdownRequested
-      );
+      const waitMs = computeNextWaitMs(pollLoopState, config);
+      if (pollLoopState.lastFailureBlocked) {
+        logger.warn('anti-bot block; cooling down before next poll', {
+          event: 'monitor.poll.cooldown',
+          waitMs,
+          consecutiveBlocked: pollLoopState.consecutiveBlocked,
+        });
+      }
+      await waitUntilNextPollOrShutdown(waitMs, () => shutdownRequested);
     }
   } finally {
     setReadinessMarker(false);

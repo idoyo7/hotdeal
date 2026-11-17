@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { fetchLatestPosts, findMatchingPosts } from '../dist/monitor.js';
+import {
+  AntiBotBlockedError,
+  collectUrlCandidates,
+  computeRequestDelayMs,
+  deriveBoardMirrors,
+  fetchLatestPosts,
+  findMatchingPosts,
+} from '../dist/monitor.js';
 
 const makePost = (title, hoursAgo, hasDate = true) => ({
   title,
@@ -403,6 +410,14 @@ const baseTestConfig = (boardUrls, overrides = {}) => ({
   crawlMode: 'http',
   requestIntervalMs: 1000,
   requestTimeoutMs: 5000,
+  requestDelayMs: 0,
+  requestDelayJitterMs: 0,
+  requestIntervalJitterMs: 0,
+  abortOnBlock: false,
+  blockCooldownBaseMs: 600000,
+  blockCooldownMaxMs: 3600000,
+  boardMirrorFallback: true,
+  ddosCheckCandidate: true,
   maxPagesPerPoll: 1,
   maxItemsPerPoll: 30,
   startupMaxPagesPerPoll: 1,
@@ -670,6 +685,73 @@ test('fetchLatestPosts does not drop posts when total collected already fits und
       0,
       'collected(30)==limit(30)이면 아무것도 잘리지 않았으니 truncated 로그가 없어야 한다'
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('collectUrlCandidates: ddosCheckOnly 후보 토글', () => {
+  const url = 'https://www.fmkorea.com/hotdeal';
+  assert.equal(collectUrlCandidates(url, 1).length, 2);
+  assert.deepEqual(collectUrlCandidates(url, 1, false), [url]);
+  assert.deepEqual(collectUrlCandidates(url, 2, false), [`${url}?page=2`]);
+});
+
+test('deriveBoardMirrors derives the opposite host', () => {
+  assert.deepEqual(deriveBoardMirrors('https://m.fmkorea.com/hotdeal'), [
+    'https://www.fmkorea.com/hotdeal',
+  ]);
+});
+
+test('computeRequestDelayMs adds bounded jitter', () => {
+  assert.equal(computeRequestDelayMs(1500, 1000, () => 0), 1500);
+  assert.equal(computeRequestDelayMs(1500, 1000, () => 0.999), 2499);
+  assert.equal(computeRequestDelayMs(0, 0), 0);
+});
+
+test('fetchLatestPosts aborts on first block with AntiBotBlockedError when abortOnBlock', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response('<html><body>에펨코리아 보안 시스템</body></html>', { status: 200 });
+  };
+  try {
+    const config = baseTestConfig(
+      ['https://m.fmkorea.com/index.php?mid=a', 'https://www.fmkorea.com/index.php?mid=b'],
+      { abortOnBlock: true, maxPagesPerPoll: 3 }
+    );
+    const { captured, result } = await captureLog(() =>
+      fetchLatestPosts(config).then(
+        () => undefined,
+        (error) => error
+      )
+    );
+    assert.ok(result instanceof AntiBotBlockedError);
+    assert.equal(calls, 1);
+    const aborted = parsedLogs(captured).filter((e) => e.event === 'monitor.fetch.aborted');
+    assert.equal(aborted.length, 1);
+    assert.equal(aborted[0].requestCount, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchLatestPosts treats an all-seen page as valid (no extra candidate/mirror requests)', async () => {
+  const originalFetch = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    return new Response(makeBoardHtml(9300000, 2, '중복'), { status: 200 });
+  };
+  try {
+    const config = baseTestConfig([
+      'https://m.fmkorea.com/index.php?mid=x',
+      'https://m.fmkorea.com/index.php?mid=y',
+    ]);
+    const { result: posts } = await captureLog(() => fetchLatestPosts(config));
+    assert.equal(posts.length, 2);
+    assert.equal(urls.length, 2, 'board 당 1회 요청만');
   } finally {
     globalThis.fetch = originalFetch;
   }

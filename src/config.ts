@@ -59,6 +59,14 @@ export type MonitoringConfig = {
   crawlMode: 'http' | 'playwright' | 'auto';
   requestIntervalMs: number;
   requestTimeoutMs: number;
+  requestDelayMs: number;
+  requestDelayJitterMs: number;
+  requestIntervalJitterMs: number;
+  abortOnBlock: boolean;
+  blockCooldownBaseMs: number;
+  blockCooldownMaxMs: number;
+  boardMirrorFallback: boolean;
+  ddosCheckCandidate: boolean;
   maxPagesPerPoll: number;
   maxItemsPerPoll: number;
   startupMaxPagesPerPoll: number;
@@ -244,6 +252,14 @@ export const getConfig = () => {
 
   const requestIntervalMs = toInt(getEnv('REQUEST_INTERVAL_MS'), 3 * 60 * 1000);
   const requestTimeoutMs = toInt(getEnv('REQUEST_TIMEOUT_MS'), 20_000);
+  const requestDelayMs = toInt(getEnv('REQUEST_DELAY_MS'), 1500);
+  const requestDelayJitterMs = toInt(getEnv('REQUEST_DELAY_JITTER_MS'), 1000);
+  const requestIntervalJitterMs = toInt(getEnv('REQUEST_INTERVAL_JITTER_MS'), 0);
+  const abortOnBlock = toBoolean(getEnv('ABORT_ON_BLOCK'), true);
+  const blockCooldownBaseMs = toInt(getEnv('BLOCK_COOLDOWN_BASE_MS'), 600_000);
+  const blockCooldownMaxMs = toInt(getEnv('BLOCK_COOLDOWN_MAX_MS'), 3_600_000);
+  const boardMirrorFallback = toBoolean(getEnv('BOARD_MIRROR_FALLBACK'), true);
+  const ddosCheckCandidate = toBoolean(getEnv('DDOS_CHECK_CANDIDATE'), true);
   const crawlMode = toCrawlMode(getEnv('CRAWL_MODE'));
   const maxPagesPerPoll = toInt(getEnv('MAX_PAGES_PER_POLL'), 1);
   const maxItemsPerPoll = toInt(getEnv('MAX_ITEMS_PER_POLL'), 30);
@@ -316,6 +332,14 @@ export const getConfig = () => {
     crawlMode,
     requestIntervalMs,
     requestTimeoutMs,
+    requestDelayMs,
+    requestDelayJitterMs,
+    requestIntervalJitterMs,
+    abortOnBlock,
+    blockCooldownBaseMs,
+    blockCooldownMaxMs,
+    boardMirrorFallback,
+    ddosCheckCandidate,
     maxPagesPerPoll,
     maxItemsPerPoll,
     startupMaxPagesPerPoll,

@@ -93,6 +93,14 @@ npm run docker:test
 | `CRAWL_MODE` | `playwright` / `auto` / `http` (기본 `playwright`) |
 | `ALERT_KEYWORDS` | 콤마 구분 키워드 (기본: `삼다수,요기요`) |
 | `REQUEST_INTERVAL_MS` | 조회 주기 (밀리초, 기본: `180000`) |
+| `REQUEST_INTERVAL_JITTER_MS` | 조회 주기에 0~N ms 무작위 지연 추가 (기본: `0`) |
+| `REQUEST_DELAY_MS` | 한 사이클 안에서 요청 사이 기본 지연 (밀리초, 기본: `1500`) |
+| `REQUEST_DELAY_JITTER_MS` | 요청 사이 지연에 더하는 무작위 0~N ms (기본: `1000`) |
+| `ABORT_ON_BLOCK` | 안티봇 차단 감지 시 해당 사이클을 즉시 중단 (기본: `true`) |
+| `BLOCK_COOLDOWN_BASE_MS` | 차단 후 첫 쿨다운 (밀리초, 연속 차단마다 2배, 기본: `600000`) |
+| `BLOCK_COOLDOWN_MAX_MS` | 쿨다운 상한 (밀리초, 기본: `3600000`) |
+| `BOARD_MIRROR_FALLBACK` | 실패 시 m./www. 미러 시도 (기본: `true`) |
+| `DDOS_CHECK_CANDIDATE` | `ddosCheckOnly=1` 후보 URL 추가 시도 (기본: `true`) |
 | `REQUEST_TIMEOUT_MS` | HTTP 타임아웃 (밀리초, 기본: `20000`) |
 | `MAX_ITEMS_PER_POLL` | 한 번 조회에서 분석할 최대 게시글 수 (기본: `30`) |
 | `MAX_PAGES_PER_POLL` | 일반 주기에서 순회할 최대 페이지 수 (기본: `1`) |

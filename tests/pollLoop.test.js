@@ -8,6 +8,7 @@ import {
   runPollAttempt,
   loadStateStoreSafely,
   runOnceFailed,
+  computeNextWaitMs,
 } from '../dist/entrypoints/pollLoop.js';
 
 const captureLog = async (run) => {
@@ -172,4 +173,60 @@ test('runOnceFailed는 폴이 한 번이라도 실패했을 때만 true', () => 
   assert.equal(runOnceFailed({ consecutiveFailures: 0 }), false);
   assert.equal(runOnceFailed({ consecutiveFailures: 1 }), true);
   assert.equal(runOnceFailed({ consecutiveFailures: 3 }), true);
+});
+
+const waitConfig = {
+  requestIntervalMs: 1000,
+  requestIntervalJitterMs: 0,
+  blockCooldownBaseMs: 600_000,
+  blockCooldownMaxMs: 3_600_000,
+};
+
+test('computeNextWaitMs: 차단 쿨다운은 2배씩 늘고 상한에서 멈춘다', () => {
+  const waits = [];
+  let state = { consecutiveFailures: 0 };
+  for (let i = 0; i < 5; i += 1) {
+    state = nextPollLoopStateOnFailure(state, 5, true).state;
+    waits.push(computeNextWaitMs(state, waitConfig));
+  }
+  assert.deepEqual(waits, [600_000, 1_200_000, 2_400_000, 3_600_000, 3_600_000]);
+});
+
+test('computeNextWaitMs: 성공하면 쿨다운이 리셋되고 일반 주기를 쓴다', () => {
+  let state = nextPollLoopStateOnFailure({ consecutiveFailures: 0 }, 5, true).state;
+  state = nextPollLoopStateOnSuccess(state).state;
+  assert.equal(state.consecutiveBlocked ?? 0, 0);
+  assert.equal(computeNextWaitMs(state, waitConfig), 1000);
+});
+
+test('computeNextWaitMs: 비차단 실패는 연속 차단 카운터를 리셋한다', () => {
+  let state = nextPollLoopStateOnFailure({ consecutiveFailures: 0 }, 5, true).state;
+  state = nextPollLoopStateOnFailure(state, 5, false).state;
+  assert.equal(state.consecutiveBlocked, 0);
+  assert.equal(computeNextWaitMs(state, waitConfig), 1000);
+});
+
+test('computeNextWaitMs: 주기 jitter 를 더한다', () => {
+  const wait = computeNextWaitMs(
+    { consecutiveFailures: 0 },
+    { ...waitConfig, requestIntervalJitterMs: 500 },
+    () => 0.5
+  );
+  assert.equal(wait, 1250);
+});
+
+test('runPollAttempt: AntiBotBlockedError 는 차단 상태로 기록된다', async () => {
+  const { AntiBotBlockedError } = await import('../dist/monitor.js');
+  const { result } = await captureLog(() =>
+    runPollAttempt(
+      async () => {
+        throw new AntiBotBlockedError('blocked');
+      },
+      { consecutiveFailures: 0 },
+      () => {}
+    )
+  );
+  assert.equal(result.lastFailureBlocked, true);
+  assert.equal(result.consecutiveBlocked, 1);
+  assert.equal(result.consecutiveFailures, 1);
 });
